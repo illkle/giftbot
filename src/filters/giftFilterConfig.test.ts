@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  getMatchingGiftFilterConditions,
   matchesGiftFilterConfig,
   parseGiftFilterConfig,
   stringifyGiftFilterConfig,
@@ -77,5 +78,25 @@ describe("matchesGiftFilterConfig", () => {
         Symbol: "Spear",
       }),
     ).toBe(false);
+  });
+
+  it("returns all matched conditions for message reporting", () => {
+    const parsed = parseGiftFilterConfig("backdrop:orange,symbol:shield,name:westside");
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+
+    const matched = getMatchingGiftFilterConditions(parsed.config, {
+      Backdrop: "Orange Sky",
+      Symbol: "Shield of Light",
+      Name: "Westside Sign",
+    });
+
+    expect(matched).toEqual([
+      { field: "backdrop", value: "orange" },
+      { field: "symbol", value: "shield" },
+      { field: "name", value: "westside" },
+    ]);
   });
 });

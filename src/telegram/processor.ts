@@ -23,6 +23,10 @@ function formatEventMessage(event: BotEvent): string {
     ([key, value]) => `${key}: ${value}`,
   );
 
+  if (event.type === "info" && event.source === "giftwhalefeed-watcher") {
+    return [event.message, ...metadataLines].join("\n");
+  }
+
   const lines = [`${headerByType[event.type]} (${event.source})`, event.message, ...metadataLines];
   return lines.join("\n");
 }

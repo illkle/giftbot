@@ -88,12 +88,17 @@ function stringifyGiftFilterConfig(config: GiftFilterConfig): string {
   return config.conditions.map((condition) => `${condition.field}:${condition.value}`).join(",");
 }
 
-function matchesGiftFilterConfig(config: GiftFilterConfig, giftTable: GiftTableData): boolean {
+function getMatchingGiftFilterConditions(
+  config: GiftFilterConfig,
+  giftTable: GiftTableData,
+): GiftFilterCondition[] {
   const normalizedGiftTable = new Map<string, string>();
 
   for (const [field, value] of Object.entries(giftTable)) {
     normalizedGiftTable.set(field.toLowerCase(), value.toLowerCase());
   }
+
+  const matchingConditions: GiftFilterCondition[] = [];
 
   for (const condition of config.conditions) {
     const giftValue = normalizedGiftTable.get(condition.field);
@@ -102,14 +107,19 @@ function matchesGiftFilterConfig(config: GiftFilterConfig, giftTable: GiftTableD
     }
 
     if (giftValue.includes(condition.value)) {
-      return true;
+      matchingConditions.push(condition);
     }
   }
 
-  return false;
+  return matchingConditions;
+}
+
+function matchesGiftFilterConfig(config: GiftFilterConfig, giftTable: GiftTableData): boolean {
+  return getMatchingGiftFilterConditions(config, giftTable).length > 0;
 }
 
 export {
+  getMatchingGiftFilterConditions,
   matchesGiftFilterConfig,
   parseGiftFilterConfig,
   stringifyGiftFilterConfig,

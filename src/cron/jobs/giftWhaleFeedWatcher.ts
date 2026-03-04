@@ -1,6 +1,8 @@
 import { load } from "cheerio";
+import { isValid, parseISO } from "date-fns";
+import { formatInTimeZone } from "date-fns-tz";
 import {
-  matchesGiftFilterConfig,
+  getMatchingGiftFilterConditions,
   parseGiftFilterConfig,
 } from "../../filters/giftFilterConfig";
 import type { GiftFilterConfig, GiftTableData } from "../../filters/giftFilterConfig";
@@ -21,6 +23,8 @@ type GiftNotificationPayload = {
   nftLink: string;
   giftTable: GiftTableData;
 };
+
+const DISPLAY_TIME_FORMAT = "MMMM dd HH:mm:ss";
 
 function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
@@ -79,6 +83,13 @@ function parseGiftTable(html: string): GiftTableData {
   const $ = load(html);
   const rows = $(".tgme_gift_table tr");
   const data: GiftTableData = {};
+  const previewName = normalizeWhitespace(
+    $(".tgme_gift_preview svg").first().find("text").first().text(),
+  );
+
+  if (previewName) {
+    data.Name = previewName;
+  }
 
   rows.each((_, row) => {
     const rowElement = $(row);
@@ -95,10 +106,28 @@ function parseGiftTable(html: string): GiftTableData {
   return data;
 }
 
-function formatNotificationMessage(payload: GiftNotificationPayload): string {
+function formatMessageTime(rawTime: string, timezone: string): string {
+  const parsed = parseISO(rawTime);
+  if (!isValid(parsed)) {
+    return rawTime;
+  }
+
+  try {
+    return formatInTimeZone(parsed, timezone, DISPLAY_TIME_FORMAT);
+  } catch {
+    return formatInTimeZone(parsed, "UTC", DISPLAY_TIME_FORMAT);
+  }
+}
+
+function formatNotificationMessage(
+  payload: GiftNotificationPayload,
+  timezone: string,
+  matchedFilterDescription: string,
+): string {
   const giftRows = Object.entries(payload.giftTable).map(([key, value]) => `${key}: ${value}`);
   return [
-    `Time: ${payload.messageTime}`,
+    `Time: ${formatMessageTime(payload.messageTime, timezone)}`,
+    `Matched filter: ${matchedFilterDescription}`,
     ...(giftRows.length > 0 ? ["", ...giftRows] : []),
     "",
     `NFT: ${payload.nftLink}`,
@@ -128,9 +157,12 @@ export const giftWhaleFeedWatcherJob: CronJobDefinition = {
     const events: BotEvent[] = [];
     const runStartedAt = Date.now();
     const runId = new Date(runStartedAt).toISOString();
+    const timezone = process.env.CRON_TIMEZONE ?? "UTC";
 
     try {
-      logger.info(`[giftwhalefeed-watcher] run ${runId} fetching feed: ${FEED_URL}`);
+      logger.info(
+        `[giftwhalefeed-watcher] run ${runId} fetching feed: ${FEED_URL} (display_timezone=${timezone})`,
+      );
       const feedHtml = await fetchHtml(FEED_URL);
       const messageLinks = parseFeedMessageLinks(feedHtml);
       logger.info(
@@ -231,7 +263,6 @@ export const giftWhaleFeedWatcherJob: CronJobDefinition = {
             giftTable,
           };
 
-          const message = formatNotificationMessage(payload);
           let notifiedCount = 0;
           let skippedByFilterCount = 0;
           let skippedInvalidFilterCount = 0;
@@ -243,10 +274,24 @@ export const giftWhaleFeedWatcherJob: CronJobDefinition = {
               continue;
             }
 
-            if (filterConfig && !matchesGiftFilterConfig(filterConfig, giftTable)) {
-              skippedByFilterCount += 1;
-              continue;
+            let matchedFilterDescription = "none (chat has no filter)";
+            if (filterConfig) {
+              const matchedConditions = getMatchingGiftFilterConditions(filterConfig, giftTable);
+              if (matchedConditions.length === 0) {
+                skippedByFilterCount += 1;
+                continue;
+              }
+
+              matchedFilterDescription = matchedConditions
+                .map((condition) => `${condition.field}:${condition.value}`)
+                .join(", ");
             }
+
+            const message = formatNotificationMessage(
+              payload,
+              timezone,
+              matchedFilterDescription,
+            );
 
             events.push({
               type: "info",
