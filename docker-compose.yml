@@ -6,8 +6,8 @@ services:
     environment:
       DATABASE_PATH: /app/data/giftbot.sqlite
     volumes:
-      - giftbot_data:/app/data
+      - giftbot_data2:/app/data
     restart: unless-stopped
 
 volumes:
-  giftbot_data:
+  giftbot_data2:

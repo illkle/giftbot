@@ -93,6 +93,8 @@ function createTelegramRuntime(
     const topicId = getTopicId(ctx);
     const rawConfigInput = typeof ctx.match === "string" ? ctx.match.trim() : "";
 
+    console.log("RECEIVE START COMMAND", chatId, topicId, new Date(ctx.msg.date))
+
     if (rawConfigInput.length === 0) {
       await activeChats.markActive(chatId, topicId, null);
       await ctx.reply(
@@ -128,12 +130,6 @@ function createTelegramRuntime(
     const topicId = getTopicId(ctx);
     await activeChats.markInactive(chatId, topicId);
     await ctx.reply("Giftbot paused for this chat.");
-  });
-
-  bot.on("message", async (ctx) => {
-    const chatId = String(ctx.chat.id);
-    const topicId = getTopicId(ctx);
-    await activeChats.markActive(chatId, topicId);
   });
 
   bot.command("status", async (ctx) => {
