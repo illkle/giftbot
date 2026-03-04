@@ -298,14 +298,18 @@ describe("createTelegramRuntime", () => {
     );
   });
 
-  it("returns health status and seen count for active chat", async () => {
+  it("returns status with seen count and filter for active chat", async () => {
     const fakeBot = createFakeBot();
     createTelegramBotMock.mockReturnValue(fakeBot);
 
     const { createTelegramRuntime } = await import("./processor");
     const activeChats = buildActiveChatsStore();
     activeChats.listActiveChats = vi.fn(async () => [
-      { chatId: "700", topicId: null, giftFilterConfig: null },
+      {
+        chatId: "700",
+        topicId: null,
+        giftFilterConfig: "backdrop:lemongrass,symbol:shield",
+      },
     ]);
     const giftWhaleFeedSeen = buildGiftWhaleFeedSeenStore(1234);
     createTelegramRuntime(buildConfig(), activeChats, giftWhaleFeedSeen);
@@ -313,7 +317,7 @@ describe("createTelegramRuntime", () => {
     const reply = vi.fn(async () => {
       return;
     });
-    await fakeBot.commandHandlers.health!({
+    await fakeBot.commandHandlers.status!({
       chat: { id: 700 },
       reply,
     });
@@ -324,10 +328,13 @@ describe("createTelegramRuntime", () => {
     expect(reply).toHaveBeenCalledWith(
       expect.stringContaining("giftwhale_feed_seen: 1234"),
     );
+    expect(reply).toHaveBeenCalledWith(
+      expect.stringContaining("filter: backdrop:lemongrass,symbol:shield"),
+    );
     expect(reply).toHaveBeenCalledWith(expect.not.stringContaining("warning:"));
   });
 
-  it("returns health warning when chat is not active", async () => {
+  it("returns status warning when chat is not active", async () => {
     const fakeBot = createFakeBot();
     createTelegramBotMock.mockReturnValue(fakeBot);
 
@@ -342,13 +349,16 @@ describe("createTelegramRuntime", () => {
     const reply = vi.fn(async () => {
       return;
     });
-    await fakeBot.commandHandlers.health!({
+    await fakeBot.commandHandlers.status!({
       chat: { id: 9999 },
       reply,
     });
 
     expect(reply).toHaveBeenCalledWith(
       expect.stringContaining("giftwhale_feed_seen: 5"),
+    );
+    expect(reply).toHaveBeenCalledWith(
+      expect.stringContaining("filter: none"),
     );
     expect(reply).toHaveBeenCalledWith(
       expect.stringContaining("warning: this chat is not active. use /start to activate."),

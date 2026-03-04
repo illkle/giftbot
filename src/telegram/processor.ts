@@ -136,7 +136,7 @@ function createTelegramRuntime(
     await activeChats.markActive(chatId, topicId);
   });
 
-  bot.command("health", async (ctx) => {
+  bot.command("status", async (ctx) => {
     const chatId = String(ctx.chat.id);
     const topicId = getTopicId(ctx) ?? null;
     const [activeChatList, seenMessageCount] = await Promise.all([
@@ -144,15 +144,17 @@ function createTelegramRuntime(
       giftWhaleFeedSeen.countSeenMessages(),
     ]);
 
-    const isActiveChat = activeChatList.some(
+    const activeChat = activeChatList.find(
       (chat) => chat.chatId === chatId && chat.topicId === topicId,
     );
+    const currentFilter = activeChat?.giftFilterConfig ?? null;
     const lines = [
       "alive: yes",
       `giftwhale_feed_seen: ${seenMessageCount}`,
+      `filter: ${currentFilter ?? "none"}`,
     ];
 
-    if (!isActiveChat) {
+    if (!activeChat) {
       lines.push("warning: this chat is not active. use /start to activate.");
     }
 
