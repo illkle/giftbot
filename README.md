@@ -4,7 +4,7 @@ Telegram bot with a pluggable cron watcher layer:
 
 1. Cron jobs run on a schedule and return `BotEvent[]`.
 2. Cron jobs can persist/read state via a shared Drizzle SQLite store (`ctx.state`).
-3. Active chats are tracked in SQLite (`/start` activates, `/stop` deactivates).
+3. Active chats are tracked in SQLite (`/start` activates, `/stop` deactivates), including per-chat gift filters.
 4. The feed watcher stores processed `(message_time, nft_link)` pairs to avoid reprocessing.
 5. Events are forwarded to the Telegram processor.
 6. Telegram processor formats events and sends messages via Telegram API.
@@ -47,15 +47,20 @@ Flow:
 2. Extracts message time + `https://t.me/nft/*` links.
 3. Skips pairs already seen (`same time + same link`).
 4. Fetches each unseen NFT page and parses `.tgme_gift_table`.
-5. Sends stringified JSON payload to all active chats.
+5. Sends notifications to active chats whose saved filter matches (or all active chats when no filter is set).
 
 On first run, it performs an initial sync (marks current feed entries as seen) and starts sending only newly appearing entries afterward.
 
 How to test:
 1. Open your bot chat in Telegram and send `/start`.
-2. Wait up to one minute.
-3. You should receive JSON messages for newly seen feed items.
-4. Send `/stop` to disable notifications for that chat.
+2. (Optional) set/update a filter with `/start backdrop:lemongrass,backdrop:orange,symbol:shield`.
+3. Filter semantics:
+   - each condition is `field:value`.
+   - comma-separated conditions are OR-ed.
+   - all comparisons are case-insensitive substring checks.
+4. Wait up to one minute.
+5. You should receive messages for newly seen matching feed items.
+6. Send `/stop` to disable notifications for that chat.
 
 ## Schema migrations
 

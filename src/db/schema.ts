@@ -10,6 +10,7 @@ const cronStateTable = sqliteTable("cron_state", {
 const telegramChatsTable = sqliteTable("telegram_chats", {
   chatId: text("chat_id").primaryKey(),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+  giftFilterConfig: text("gift_filter_config"),
   firstSeenAt: integer("first_seen_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 });

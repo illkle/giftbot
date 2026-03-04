@@ -1,4 +1,9 @@
 import { load } from "cheerio";
+import {
+  matchesGiftFilterConfig,
+  parseGiftFilterConfig,
+} from "../../filters/giftFilterConfig";
+import type { GiftFilterConfig, GiftTableData } from "../../filters/giftFilterConfig";
 import type { BotEvent } from "../../events/types";
 import type { CronJobDefinition } from "../types";
 
@@ -11,7 +16,6 @@ type FeedMessageLink = {
   nftLink: string;
 };
 
-type GiftTableData = Record<string, string>;
 type GiftNotificationPayload = {
   messageTime: string;
   nftLink: string;
@@ -122,25 +126,38 @@ export const giftWhaleFeedWatcherJob: CronJobDefinition = {
   async run(ctx) {
     const { logger, activeChats, giftWhaleFeedSeen, state } = ctx;
     const events: BotEvent[] = [];
+    const runStartedAt = Date.now();
+    const runId = new Date(runStartedAt).toISOString();
 
     try {
+      logger.info(`[giftwhalefeed-watcher] run ${runId} fetching feed: ${FEED_URL}`);
       const feedHtml = await fetchHtml(FEED_URL);
       const messageLinks = parseFeedMessageLinks(feedHtml);
+      logger.info(
+        `[giftwhalefeed-watcher] run ${runId} extracted ${messageLinks.length} message link(s) from feed`,
+      );
 
       if (messageLinks.length === 0) {
-        logger.info("[giftwhalefeed-watcher] no NFT links found in feed");
+        logger.info(`[giftwhalefeed-watcher] run ${runId} no NFT links found in feed`);
         return events;
       }
 
       const initialSyncComplete = await state.getJson<boolean>(INITIAL_SYNC_STATE_KEY);
+      logger.info(
+        `[giftwhalefeed-watcher] run ${runId} initialSyncComplete=${String(Boolean(initialSyncComplete))}`,
+      );
+
       if (!initialSyncComplete) {
+        logger.info(
+          `[giftwhalefeed-watcher] run ${runId} performing initial sync for ${messageLinks.length} item(s)`,
+        );
         for (const messageLink of messageLinks) {
           await giftWhaleFeedSeen.markSeenIfNew(messageLink);
         }
 
         await state.setJson(INITIAL_SYNC_STATE_KEY, true);
         logger.info(
-          `[giftwhalefeed-watcher] initial sync completed, marked ${messageLinks.length} item(s) as seen`,
+          `[giftwhalefeed-watcher] run ${runId} initial sync completed, marked ${messageLinks.length} item(s) as seen`,
         );
         return events;
       }
@@ -152,22 +169,61 @@ export const giftWhaleFeedWatcherJob: CronJobDefinition = {
           unseenLinks.push(messageLink);
         }
       }
+      logger.info(
+        `[giftwhalefeed-watcher] run ${runId} detected ${unseenLinks.length} unseen item(s) out of ${messageLinks.length}`,
+      );
 
       if (unseenLinks.length === 0) {
-        logger.info("[giftwhalefeed-watcher] no new messages");
+        logger.info(`[giftwhalefeed-watcher] run ${runId} no new messages`);
         return events;
       }
 
-      const chatIds = await activeChats.listActiveChatIds();
-      if (chatIds.length === 0) {
-        logger.info("[giftwhalefeed-watcher] no active chats to notify");
+      const chats = await activeChats.listActiveChats();
+      logger.info(`[giftwhalefeed-watcher] run ${runId} loaded ${chats.length} active chat(s)`);
+      if (chats.length === 0) {
+        logger.info(`[giftwhalefeed-watcher] run ${runId} no active chats to notify`);
         return events;
       }
 
-      for (const unseen of unseenLinks) {
+      const parsedFilterByChatId = new Map<string, GiftFilterConfig | null | "invalid">();
+      let chatsWithoutFilter = 0;
+      let chatsWithValidFilter = 0;
+      let chatsWithInvalidFilter = 0;
+
+      for (const chat of chats) {
+        if (!chat.giftFilterConfig) {
+          parsedFilterByChatId.set(chat.chatId, null);
+          chatsWithoutFilter += 1;
+          continue;
+        }
+
+        const parsed = parseGiftFilterConfig(chat.giftFilterConfig);
+        if (!parsed.ok) {
+          logger.warn(
+            `[giftwhalefeed-watcher] run ${runId} invalid stored filter for chat ${chat.chatId}: ${parsed.error}`,
+          );
+          parsedFilterByChatId.set(chat.chatId, "invalid");
+          chatsWithInvalidFilter += 1;
+          continue;
+        }
+
+        parsedFilterByChatId.set(chat.chatId, parsed.config);
+        chatsWithValidFilter += 1;
+      }
+      logger.info(
+        `[giftwhalefeed-watcher] run ${runId} chat filter summary: no_filter=${chatsWithoutFilter}, valid_filter=${chatsWithValidFilter}, invalid_filter=${chatsWithInvalidFilter}`,
+      );
+
+      for (const [index, unseen] of unseenLinks.entries()) {
         try {
+          logger.info(
+            `[giftwhalefeed-watcher] run ${runId} processing unseen ${index + 1}/${unseenLinks.length}: ${unseen.nftLink}`,
+          );
           const nftHtml = await fetchHtml(unseen.nftLink);
           const giftTable = parseGiftTable(nftHtml);
+          logger.info(
+            `[giftwhalefeed-watcher] run ${runId} parsed ${Object.keys(giftTable).length} gift field(s) for ${unseen.nftLink}`,
+          );
 
           const payload: GiftNotificationPayload = {
             messageTime: unseen.messageTime,
@@ -176,26 +232,50 @@ export const giftWhaleFeedWatcherJob: CronJobDefinition = {
           };
 
           const message = formatNotificationMessage(payload);
+          let notifiedCount = 0;
+          let skippedByFilterCount = 0;
+          let skippedInvalidFilterCount = 0;
 
-          for (const chatId of chatIds) {
+          for (const chat of chats) {
+            const filterConfig = parsedFilterByChatId.get(chat.chatId);
+            if (filterConfig === "invalid") {
+              skippedInvalidFilterCount += 1;
+              continue;
+            }
+
+            if (filterConfig && !matchesGiftFilterConfig(filterConfig, giftTable)) {
+              skippedByFilterCount += 1;
+              continue;
+            }
+
             events.push({
               type: "info",
               source: "giftwhalefeed-watcher",
-              chatId,
+              chatId: chat.chatId,
               message,
             });
+            notifiedCount += 1;
           }
+          logger.info(
+            `[giftwhalefeed-watcher] run ${runId} notification routing for ${unseen.nftLink}: notified=${notifiedCount}, skipped_by_filter=${skippedByFilterCount}, skipped_invalid_filter=${skippedInvalidFilterCount}`,
+          );
         } catch (error) {
-          logger.error(`[giftwhalefeed-watcher] failed to process ${unseen.nftLink}`, error);
+          logger.error(
+            `[giftwhalefeed-watcher] run ${runId} failed to process ${unseen.nftLink}`,
+            error,
+          );
         }
       }
 
       logger.info(
-        `[giftwhalefeed-watcher] processed ${unseenLinks.length} new item(s), queued ${events.length} notification(s)`,
+        `[giftwhalefeed-watcher] run ${runId} processed ${unseenLinks.length} new item(s), queued ${events.length} notification(s), duration_ms=${Date.now() - runStartedAt}`,
       );
       return events;
     } catch (error) {
-      logger.error("[giftwhalefeed-watcher] failed", error);
+      logger.error(
+        `[giftwhalefeed-watcher] run ${runId} failed after ${Date.now() - runStartedAt}ms`,
+        error,
+      );
       return [
         {
           type: "external_api_error",
