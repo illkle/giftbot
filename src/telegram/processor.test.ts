@@ -98,8 +98,30 @@ describe("createTelegramRuntime", () => {
       reply,
     });
 
-    expect(activeChats.markActive).toHaveBeenCalledWith("42", null);
+    expect(activeChats.markActive).toHaveBeenCalledWith("42", undefined, null);
     expect(reply).toHaveBeenCalledWith(expect.stringContaining("Filter is cleared."));
+  });
+
+  it("stores topic id when /start is sent in a topic", async () => {
+    const fakeBot = createFakeBot();
+    createTelegramBotMock.mockReturnValue(fakeBot);
+
+    const { createTelegramRuntime } = await import("./processor");
+    const activeChats = buildActiveChatsStore();
+    const giftWhaleFeedSeen = buildGiftWhaleFeedSeenStore();
+    createTelegramRuntime(buildConfig(), activeChats, giftWhaleFeedSeen);
+
+    const reply = vi.fn(async () => {
+      return;
+    });
+    await fakeBot.commandHandlers.start!({
+      chat: { id: 42 },
+      msg: { message_thread_id: 999 },
+      match: "   ",
+      reply,
+    });
+
+    expect(activeChats.markActive).toHaveBeenCalledWith("42", 999, null);
   });
 
   it("rejects invalid /start filters and does not persist them", async () => {
@@ -145,6 +167,7 @@ describe("createTelegramRuntime", () => {
 
     expect(activeChats.markActive).toHaveBeenCalledWith(
       "99",
+      undefined,
       "backdrop:lemongrass,symbol:shield",
     );
     expect(reply).toHaveBeenCalledWith(
@@ -169,7 +192,7 @@ describe("createTelegramRuntime", () => {
       reply,
     });
 
-    expect(activeChats.markInactive).toHaveBeenCalledWith("77");
+    expect(activeChats.markInactive).toHaveBeenCalledWith("77", undefined);
     expect(reply).toHaveBeenCalledWith("Giftbot paused for this chat.");
   });
 
@@ -205,9 +228,16 @@ describe("createTelegramRuntime", () => {
         source: "giftwhalefeed-watcher",
         message: "network issue",
       },
+      {
+        type: "info",
+        source: "giftwhalefeed-watcher",
+        chatId: "101",
+        topicId: 321,
+        message: "topic payload",
+      },
     ]);
 
-    expect(fakeBot.api.sendMessage).toHaveBeenCalledTimes(3);
+    expect(fakeBot.api.sendMessage).toHaveBeenCalledTimes(4);
     expect(fakeBot.api.sendMessage).toHaveBeenNthCalledWith(
       1,
       "101",
@@ -225,6 +255,12 @@ describe("createTelegramRuntime", () => {
       3,
       "999",
       expect.stringContaining("API watcher error"),
+    );
+    expect(fakeBot.api.sendMessage).toHaveBeenNthCalledWith(
+      4,
+      "101",
+      expect.stringMatching(/^topic payload/),
+      { message_thread_id: 321 },
     );
   });
 
@@ -268,7 +304,9 @@ describe("createTelegramRuntime", () => {
 
     const { createTelegramRuntime } = await import("./processor");
     const activeChats = buildActiveChatsStore();
-    activeChats.listActiveChats = vi.fn(async () => [{ chatId: "700", giftFilterConfig: null }]);
+    activeChats.listActiveChats = vi.fn(async () => [
+      { chatId: "700", topicId: null, giftFilterConfig: null },
+    ]);
     const giftWhaleFeedSeen = buildGiftWhaleFeedSeenStore(1234);
     createTelegramRuntime(buildConfig(), activeChats, giftWhaleFeedSeen);
 
@@ -295,7 +333,9 @@ describe("createTelegramRuntime", () => {
 
     const { createTelegramRuntime } = await import("./processor");
     const activeChats = buildActiveChatsStore();
-    activeChats.listActiveChats = vi.fn(async () => [{ chatId: "701", giftFilterConfig: null }]);
+    activeChats.listActiveChats = vi.fn(async () => [
+      { chatId: "701", topicId: null, giftFilterConfig: null },
+    ]);
     const giftWhaleFeedSeen = buildGiftWhaleFeedSeenStore(5);
     createTelegramRuntime(buildConfig(), activeChats, giftWhaleFeedSeen);
 

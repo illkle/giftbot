@@ -245,6 +245,18 @@ function formatNotificationMessage(
   ].join("\n");
 }
 
+function getChatRouteKey(chat: { chatId: string; topicId: number | null }): string {
+  return `${chat.chatId}:${chat.topicId ?? 0}`;
+}
+
+function formatChatRoute(chat: { chatId: string; topicId: number | null }): string {
+  if (chat.topicId === null) {
+    return `chat ${chat.chatId}`;
+  }
+
+  return `chat ${chat.chatId} topic ${chat.topicId}`;
+}
+
 async function fetchHtml(url: string): Promise<string> {
   const response = await fetch(url, {
     headers: {
@@ -328,14 +340,15 @@ export const giftWhaleFeedWatcherJob: CronJobDefinition = {
         return events;
       }
 
-      const parsedFilterByChatId = new Map<string, GiftFilterConfig | null | "invalid">();
+      const parsedFilterByChatRoute = new Map<string, GiftFilterConfig | null | "invalid">();
       let chatsWithoutFilter = 0;
       let chatsWithValidFilter = 0;
       let chatsWithInvalidFilter = 0;
 
       for (const chat of chats) {
+        const chatRouteKey = getChatRouteKey(chat);
         if (!chat.giftFilterConfig) {
-          parsedFilterByChatId.set(chat.chatId, null);
+          parsedFilterByChatRoute.set(chatRouteKey, null);
           chatsWithoutFilter += 1;
           continue;
         }
@@ -343,14 +356,14 @@ export const giftWhaleFeedWatcherJob: CronJobDefinition = {
         const parsed = parseGiftFilterConfig(chat.giftFilterConfig);
         if (!parsed.ok) {
           logger.warn(
-            `[giftwhalefeed-watcher] run ${runId} invalid stored filter for chat ${chat.chatId}: ${parsed.error}`,
+            `[giftwhalefeed-watcher] run ${runId} invalid stored filter for ${formatChatRoute(chat)}: ${parsed.error}`,
           );
-          parsedFilterByChatId.set(chat.chatId, "invalid");
+          parsedFilterByChatRoute.set(chatRouteKey, "invalid");
           chatsWithInvalidFilter += 1;
           continue;
         }
 
-        parsedFilterByChatId.set(chat.chatId, parsed.config);
+        parsedFilterByChatRoute.set(chatRouteKey, parsed.config);
         chatsWithValidFilter += 1;
       }
       logger.info(
@@ -378,7 +391,7 @@ export const giftWhaleFeedWatcherJob: CronJobDefinition = {
           let skippedInvalidFilterCount = 0;
 
           for (const chat of chats) {
-            const filterConfig = parsedFilterByChatId.get(chat.chatId);
+            const filterConfig = parsedFilterByChatRoute.get(getChatRouteKey(chat));
             if (filterConfig === "invalid") {
               skippedInvalidFilterCount += 1;
               continue;
@@ -403,6 +416,7 @@ export const giftWhaleFeedWatcherJob: CronJobDefinition = {
               type: "info",
               source: "giftwhalefeed-watcher",
               chatId: chat.chatId,
+              topicId: chat.topicId ?? undefined,
               message,
               html: true,
             });

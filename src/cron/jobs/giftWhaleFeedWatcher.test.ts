@@ -155,10 +155,10 @@ describe("giftWhaleFeedWatcherJob", () => {
     const ctx = createContext({
       initialSyncComplete: true,
       chats: [
-        { chatId: "101", giftFilterConfig: null },
-        { chatId: "102", giftFilterConfig: "backdrop:lemon" },
-        { chatId: "103", giftFilterConfig: "symbol:shield" },
-        { chatId: "104", giftFilterConfig: "invalid-filter" },
+        { chatId: "101", topicId: null, giftFilterConfig: null },
+        { chatId: "102", topicId: 500, giftFilterConfig: "backdrop:lemon" },
+        { chatId: "103", topicId: null, giftFilterConfig: "symbol:shield" },
+        { chatId: "104", topicId: null, giftFilterConfig: "invalid-filter" },
       ],
       markSeenIfNew,
     });
@@ -168,6 +168,7 @@ describe("giftWhaleFeedWatcherJob", () => {
     expect(markSeenIfNew).toHaveBeenCalledTimes(2);
     expect(events).toHaveLength(2);
     expect(events.map((event) => event.chatId)).toEqual(["101", "102"]);
+    expect(events.map((event) => event.topicId)).toEqual([undefined, 500]);
     expect(events[0]?.message).not.toContain("match:");
     expect(events[1]?.message).toContain("match: backdrop:lemon");
     expect(events[0]?.message).toContain("🎉 GIFT SOLD!");
@@ -211,7 +212,7 @@ describe("giftWhaleFeedWatcherJob", () => {
 
     const ctx = createContext({
       initialSyncComplete: true,
-      chats: [{ chatId: "501", giftFilterConfig: "backdrop:lemon" }],
+      chats: [{ chatId: "501", topicId: null, giftFilterConfig: "backdrop:lemon" }],
       markSeenIfNew: async () => true,
     });
 
@@ -221,6 +222,52 @@ describe("giftWhaleFeedWatcherJob", () => {
     expect(events[0]?.chatId).toBe("501");
     expect(events[0]?.message).toContain("match: backdrop:lemon");
     expect(events[0]?.message).toContain('<a href="https://t.me/nft/FILTERED">Filtered Gift #1</a>');
+  });
+
+  it("keeps topic filters isolated within the same chat", async () => {
+    const feedHtml = `
+      <div class="tgme_widget_message_wrap">
+        <time datetime="2026-03-04T10:20:00Z"></time>
+        <div class="tgme_widget_message_text js-message_text" dir="auto">
+          🎉 GIFT SOLD!<br/><br/>🏷 <a href="https://t.me/nft/TOPIC">Topic Gift #1</a><br/>└ Sold on <a href="https://t.me/mrkt/app?startapp=123">MRKT</a>
+        </div>
+      </div>
+    `;
+    const nftHtml = `
+      <table class="tgme_gift_table">
+        <tr><th>Backdrop</th><td>LemonGrass Glow</td></tr>
+        <tr><th>Symbol</th><td>Star</td></tr>
+      </table>
+    `;
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url === "https://t.me/s/giftwhalefeed") {
+          return htmlResponse(feedHtml);
+        }
+        if (url === "https://t.me/nft/TOPIC") {
+          return htmlResponse(nftHtml);
+        }
+        throw new Error(`Unexpected URL in test: ${url}`);
+      }),
+    );
+
+    const ctx = createContext({
+      initialSyncComplete: true,
+      chats: [
+        { chatId: "500", topicId: 11, giftFilterConfig: null },
+        { chatId: "500", topicId: 12, giftFilterConfig: "symbol:shield" },
+        { chatId: "500", topicId: 13, giftFilterConfig: "backdrop:lemon" },
+      ],
+      markSeenIfNew: async () => true,
+    });
+
+    const events = await giftWhaleFeedWatcherJob.run(ctx);
+
+    expect(events).toHaveLength(2);
+    expect(events.map((event) => event.topicId)).toEqual([11, 13]);
   });
 
   it("returns a structured error event when feed fetch fails", async () => {
@@ -283,7 +330,7 @@ describe("giftWhaleFeedWatcherJob", () => {
 
     const ctx = createContext({
       initialSyncComplete: true,
-      chats: [{ chatId: "200", giftFilterConfig: null }],
+      chats: [{ chatId: "200", topicId: null, giftFilterConfig: null }],
       markSeenIfNew: async () => true,
     });
 
@@ -328,7 +375,7 @@ describe("giftWhaleFeedWatcherJob", () => {
 
     const ctx = createContext({
       initialSyncComplete: true,
-      chats: [{ chatId: "300", giftFilterConfig: null }],
+      chats: [{ chatId: "300", topicId: null, giftFilterConfig: null }],
       markSeenIfNew: async (key) => {
         const uniqueKey = `${key.messageTime}::${key.nftLink}`;
         if (seenKeys.has(uniqueKey)) {

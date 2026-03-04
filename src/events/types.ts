@@ -5,8 +5,9 @@ type BotEvent = {
   source: string;
   message: string;
   chatId?: string;
+  topicId?: number;
   metadata?: Record<string, string | number | boolean>;
-  html?: boolean
+  html?: boolean;
 };
 
 export type { BotEvent, EventType };

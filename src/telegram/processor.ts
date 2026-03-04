@@ -13,6 +13,12 @@ type TelegramRuntime = {
   startPolling: () => void;
 };
 
+type TopicContext = {
+  msg?: {
+    message_thread_id?: number;
+  };
+};
+
 function formatEventMessage(event: BotEvent): string {
   const headerByType: Record<BotEvent["type"], string> = {
     external_api_change: "API change detected",
@@ -66,6 +72,15 @@ function formatStartConfirmationMessage(giftFilterConfig: string): string {
   ].join("\n");
 }
 
+function getTopicId(ctx: TopicContext): number | undefined {
+  const topicId = ctx.msg?.message_thread_id;
+  if (typeof topicId !== "number") {
+    return undefined;
+  }
+
+  return topicId;
+}
+
 function createTelegramRuntime(
   config: AppConfig,
   activeChats: ActiveChatStore,
@@ -75,10 +90,11 @@ function createTelegramRuntime(
 
   bot.command("start", async (ctx) => {
     const chatId = String(ctx.chat.id);
+    const topicId = getTopicId(ctx);
     const rawConfigInput = typeof ctx.match === "string" ? ctx.match.trim() : "";
 
     if (rawConfigInput.length === 0) {
-      await activeChats.markActive(chatId, null);
+      await activeChats.markActive(chatId, topicId, null);
       await ctx.reply(
         [
           "Giftbot activated for this chat.",
@@ -103,29 +119,34 @@ function createTelegramRuntime(
     }
 
     const normalizedConfig = stringifyGiftFilterConfig(parsed.config);
-    await activeChats.markActive(chatId, normalizedConfig);
+    await activeChats.markActive(chatId, topicId, normalizedConfig);
     await ctx.reply(formatStartConfirmationMessage(normalizedConfig));
   });
 
   bot.command("stop", async (ctx) => {
     const chatId = String(ctx.chat.id);
-    await activeChats.markInactive(chatId);
+    const topicId = getTopicId(ctx);
+    await activeChats.markInactive(chatId, topicId);
     await ctx.reply("Giftbot paused for this chat.");
   });
 
   bot.on("message", async (ctx) => {
     const chatId = String(ctx.chat.id);
-    await activeChats.markActive(chatId);
+    const topicId = getTopicId(ctx);
+    await activeChats.markActive(chatId, topicId);
   });
 
   bot.command("health", async (ctx) => {
     const chatId = String(ctx.chat.id);
+    const topicId = getTopicId(ctx) ?? null;
     const [activeChatList, seenMessageCount] = await Promise.all([
       activeChats.listActiveChats(),
       giftWhaleFeedSeen.countSeenMessages(),
     ]);
 
-    const isActiveChat = activeChatList.some((chat) => chat.chatId === chatId);
+    const isActiveChat = activeChatList.some(
+      (chat) => chat.chatId === chatId && chat.topicId === topicId,
+    );
     const lines = [
       "alive: yes",
       `giftwhale_feed_seen: ${seenMessageCount}`,
@@ -148,14 +169,19 @@ function createTelegramRuntime(
         }
 
         const message = formatEventMessage(event);
+        const sendOptions: { parse_mode?: "HTML"; message_thread_id?: number } = {};
         if (event.html) {
-          await bot.api.sendMessage(chatId, message, {
-            parse_mode: "HTML",
-          });
-        }else{
-          await bot.api.sendMessage(chatId, message);
+          sendOptions.parse_mode = "HTML";
+        }
+        if (typeof event.topicId === "number") {
+          sendOptions.message_thread_id = event.topicId;
         }
 
+        if (sendOptions.parse_mode || sendOptions.message_thread_id !== undefined) {
+          await bot.api.sendMessage(chatId, message, sendOptions);
+        } else {
+          await bot.api.sendMessage(chatId, message);
+        }
       }
     },
     startPolling() {
