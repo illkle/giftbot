@@ -1,9 +1,11 @@
 import type { AppConfig } from "../config";
+import type { ActiveChatStore } from "../db/activeChats";
 import type { BotEvent } from "../events/types";
 import { createTelegramBot } from "./bot";
 
-type TelegramEventProcessor = {
+type TelegramRuntime = {
   process: (events: BotEvent[]) => Promise<void>;
+  startPolling: () => void;
 };
 
 function formatEventMessage(event: BotEvent): string {
@@ -21,8 +23,25 @@ function formatEventMessage(event: BotEvent): string {
   return lines.join("\n");
 }
 
-function createTelegramEventProcessor(config: AppConfig): TelegramEventProcessor {
+function createTelegramRuntime(config: AppConfig, activeChats: ActiveChatStore): TelegramRuntime {
   const bot = createTelegramBot(config.telegramBotToken);
+
+  bot.command("start", async (ctx) => {
+    const chatId = String(ctx.chat.id);
+    await activeChats.markActive(chatId);
+    await ctx.reply("Giftbot activated for this chat.");
+  });
+
+  bot.command("stop", async (ctx) => {
+    const chatId = String(ctx.chat.id);
+    await activeChats.markInactive(chatId);
+    await ctx.reply("Giftbot paused for this chat.");
+  });
+
+  bot.on("message", async (ctx) => {
+    const chatId = String(ctx.chat.id);
+    await activeChats.markActive(chatId);
+  });
 
   return {
     async process(events) {
@@ -36,7 +55,14 @@ function createTelegramEventProcessor(config: AppConfig): TelegramEventProcessor
         await bot.api.sendMessage(chatId, formatEventMessage(event));
       }
     },
+    startPolling() {
+      void bot.start({
+        onStart: () => {
+          console.info("[telegram] long polling started");
+        },
+      });
+    },
   };
 }
 
-export { createTelegramEventProcessor };
+export { createTelegramRuntime };

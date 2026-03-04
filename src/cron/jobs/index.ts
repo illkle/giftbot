@@ -1,6 +1,6 @@
 import type { CronJobDefinition } from "../types";
-import { btcSpotWatcherJob } from "./btcSpotWatcher";
+import { giftWhaleFeedWatcherJob } from "./giftWhaleFeedWatcher";
 
-const jobs: CronJobDefinition[] = [btcSpotWatcherJob];
+const jobs: CronJobDefinition[] = [giftWhaleFeedWatcherJob];
 
 export { jobs };

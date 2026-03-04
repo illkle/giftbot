@@ -1,0 +1,13 @@
+services:
+  giftbot:
+    build: .
+    env_file:
+      - .env
+    environment:
+      DATABASE_PATH: /app/data/giftbot.sqlite
+    volumes:
+      - giftbot_data:/app/data
+    restart: unless-stopped
+
+volumes:
+  giftbot_data:

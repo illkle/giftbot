@@ -18,6 +18,7 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "cheerio": "^1.2.0",
     "drizzle-orm": "^0.45.1",
     "grammy": "^1.41.1",
     "node-cron": "^4.2.1"
