@@ -1,8 +1,8 @@
 {
   "name": "giftbot",
-  "module": "index.ts",
-  "type": "module",
   "private": true,
+  "type": "module",
+  "module": "index.ts",
   "scripts": {
     "start": "bun run index.ts",
     "dev": "bun --watch run index.ts",
@@ -10,7 +10,17 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "format": "oxfmt"
+  },
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
+    "drizzle-orm": "^0.45.1",
+    "grammy": "^1.41.1",
+    "node-cron": "^4.2.1",
+    "oxfmt": "^0.36.0"
   },
   "devDependencies": {
     "@types/bun": "latest",
@@ -19,13 +29,5 @@
   },
   "peerDependencies": {
     "typescript": "^5"
-  },
-  "dependencies": {
-    "cheerio": "^1.2.0",
-    "date-fns": "^4.1.0",
-    "date-fns-tz": "^3.2.0",
-    "drizzle-orm": "^0.45.1",
-    "grammy": "^1.41.1",
-    "node-cron": "^4.2.1"
   }
 }

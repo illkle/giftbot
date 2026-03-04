@@ -22,9 +22,11 @@ cp .env.example .env
 ```
 
 Required:
+
 - `TELEGRAM_BOT_TOKEN`
 
 Recommended:
+
 - `TELEGRAM_CHAT_ID` (default destination chat)
 - `CRON_TIMEZONE`
 - `RUN_JOBS_ON_STARTUP`
@@ -43,6 +45,7 @@ On startup, the app runs Drizzle migrations automatically via `migrate(...)`.
 Default cron: `giftwhalefeed-watcher` (every minute).
 
 Flow:
+
 1. Fetches `https://t.me/s/giftwhalefeed`.
 2. Extracts message time + `https://t.me/nft/*` links.
 3. Skips pairs already seen (`same time + same link`).
@@ -52,6 +55,7 @@ Flow:
 On first run, it performs an initial sync (marks current feed entries as seen) and starts sending only newly appearing entries afterward.
 
 How to test:
+
 1. Open your bot chat in Telegram and send `/start`.
 2. (Optional) set/update a filter with `/start backdrop:lemongrass,backdrop:orange,symbol:shield`.
 3. Filter semantics:

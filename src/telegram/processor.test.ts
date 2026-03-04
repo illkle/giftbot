@@ -322,12 +322,8 @@ describe("createTelegramRuntime", () => {
       reply,
     });
 
-    expect(reply).toHaveBeenCalledWith(
-      expect.stringContaining("alive: yes"),
-    );
-    expect(reply).toHaveBeenCalledWith(
-      expect.stringContaining("giftwhale_feed_seen: 1234"),
-    );
+    expect(reply).toHaveBeenCalledWith(expect.stringContaining("alive: yes"));
+    expect(reply).toHaveBeenCalledWith(expect.stringContaining("giftwhale_feed_seen: 1234"));
     expect(reply).toHaveBeenCalledWith(
       expect.stringContaining("filter: backdrop:lemongrass,symbol:shield"),
     );
@@ -354,12 +350,8 @@ describe("createTelegramRuntime", () => {
       reply,
     });
 
-    expect(reply).toHaveBeenCalledWith(
-      expect.stringContaining("giftwhale_feed_seen: 5"),
-    );
-    expect(reply).toHaveBeenCalledWith(
-      expect.stringContaining("filter: none"),
-    );
+    expect(reply).toHaveBeenCalledWith(expect.stringContaining("giftwhale_feed_seen: 5"));
+    expect(reply).toHaveBeenCalledWith(expect.stringContaining("filter: none"));
     expect(reply).toHaveBeenCalledWith(
       expect.stringContaining("warning: this chat is not active. use /start to activate."),
     );

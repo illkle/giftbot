@@ -221,7 +221,9 @@ describe("giftWhaleFeedWatcherJob", () => {
     expect(events).toHaveLength(1);
     expect(events[0]?.chatId).toBe("501");
     expect(events[0]?.message).toContain("match: backdrop:lemon");
-    expect(events[0]?.message).toContain('<a href="https://t.me/nft/FILTERED">Filtered Gift #1</a>');
+    expect(events[0]?.message).toContain(
+      '<a href="https://t.me/nft/FILTERED">Filtered Gift #1</a>',
+    );
   });
 
   it("keeps topic filters isolated within the same chat", async () => {
@@ -391,7 +393,9 @@ describe("giftWhaleFeedWatcherJob", () => {
 
     expect(events).toHaveLength(2);
 
-    const mrktMessage = events.find((event) => event.message.includes("Heart Locket #450"))?.message;
+    const mrktMessage = events.find((event) =>
+      event.message.includes("Heart Locket #450"),
+    )?.message;
     const portalsMessage = events.find((event) =>
       event.message.includes("Heart Locket #1522"),
     )?.message;

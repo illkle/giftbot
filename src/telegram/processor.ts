@@ -2,10 +2,7 @@ import type { AppConfig } from "../config";
 import type { ActiveChatStore } from "../db/activeChats";
 import type { GiftWhaleFeedSeenStore } from "../db/giftWhaleFeedSeen";
 import type { BotEvent } from "../events/types";
-import {
-  parseGiftFilterConfig,
-  stringifyGiftFilterConfig,
-} from "../filters/giftFilterConfig";
+import { parseGiftFilterConfig, stringifyGiftFilterConfig } from "../filters/giftFilterConfig";
 import { createTelegramBot } from "./bot";
 
 type TelegramRuntime = {
@@ -43,7 +40,7 @@ function formatFilterHelpMessage(): string {
     "Filter format: field:value,other_field:value",
     "Match is case-insensitive and uses substring search.",
     "Comma-separated conditions are OR.",
-    'Example: /start backdrop:lemongrass,backdrop:orange,symbol:shield',
+    "Example: /start backdrop:lemongrass,backdrop:orange,symbol:shield",
   ].join("\n");
 }
 
@@ -93,7 +90,7 @@ function createTelegramRuntime(
     const topicId = getTopicId(ctx);
     const rawConfigInput = typeof ctx.match === "string" ? ctx.match.trim() : "";
 
-    console.log("RECEIVE START COMMAND", chatId, topicId, new Date(ctx.msg.date))
+    console.log("RECEIVE START COMMAND", chatId, topicId, new Date(ctx.msg.date));
 
     if (rawConfigInput.length === 0) {
       await activeChats.markActive(chatId, topicId, null);
@@ -111,11 +108,7 @@ function createTelegramRuntime(
     const parsed = parseGiftFilterConfig(rawConfigInput);
     if (!parsed.ok) {
       await ctx.reply(
-        [
-          `Could not save filter: ${parsed.error}`,
-          "",
-          formatFilterHelpMessage(),
-        ].join("\n"),
+        [`Could not save filter: ${parsed.error}`, "", formatFilterHelpMessage()].join("\n"),
       );
       return;
     }
@@ -145,14 +138,10 @@ function createTelegramRuntime(
     );
     const currentFilter = activeChat?.giftFilterConfig ?? null;
     const lines = [
-      "alive: yes",
-      `giftwhale_feed_seen: ${seenMessageCount}`,
-      `filter: ${currentFilter ?? "none"}`,
+      `I am alive. Since start I parsed ${seenMessageCount} messages`,
+      `Notifications ${activeChat ? "ACTIVE" : "INACTIVE"}`,
+      activeChat && `filter: ${currentFilter ?? "none"}`,
     ];
-
-    if (!activeChat) {
-      lines.push("warning: this chat is not active. use /start to activate.");
-    }
 
     await ctx.reply(lines.join("\n"));
   });

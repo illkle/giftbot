@@ -36,7 +36,7 @@ function createActiveChatStore(db: AppDb): ActiveChatStore {
       conflictSet.giftFilterConfig = giftFilterConfig;
     }
 
-    console.log('mark active', chatId, topicId)
+    console.log("mark active", chatId, topicId);
 
     db.insert(telegramChatsTable)
       .values({

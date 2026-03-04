@@ -145,9 +145,7 @@ function buildNotificationMessageHtml(
     return `<a href="${escapeHtmlAttribute(nftLink)}">${escapeHtml(nftLink)}</a>`;
   }
 
-  const rendered = messageTextNodes
-    .map((node) => renderMessageNode(node, $, nftLink))
-    .join("");
+  const rendered = messageTextNodes.map((node) => renderMessageNode(node, $, nftLink)).join("");
   const normalized = normalizeRenderedMessageHtml(rendered);
 
   if (!normalized) {
