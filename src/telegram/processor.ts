@@ -1,5 +1,6 @@
 import type { AppConfig } from "../config";
 import type { ActiveChatStore } from "../db/activeChats";
+import type { GiftWhaleFeedSeenStore } from "../db/giftWhaleFeedSeen";
 import type { BotEvent } from "../events/types";
 import {
   parseGiftFilterConfig,
@@ -65,7 +66,11 @@ function formatStartConfirmationMessage(giftFilterConfig: string): string {
   ].join("\n");
 }
 
-function createTelegramRuntime(config: AppConfig, activeChats: ActiveChatStore): TelegramRuntime {
+function createTelegramRuntime(
+  config: AppConfig,
+  activeChats: ActiveChatStore,
+  giftWhaleFeedSeen: Pick<GiftWhaleFeedSeenStore, "countSeenMessages">,
+): TelegramRuntime {
   const bot = createTelegramBot(config.telegramBotToken);
 
   bot.command("start", async (ctx) => {
@@ -111,6 +116,26 @@ function createTelegramRuntime(config: AppConfig, activeChats: ActiveChatStore):
   bot.on("message", async (ctx) => {
     const chatId = String(ctx.chat.id);
     await activeChats.markActive(chatId);
+  });
+
+  bot.command("health", async (ctx) => {
+    const chatId = String(ctx.chat.id);
+    const [activeChatList, seenMessageCount] = await Promise.all([
+      activeChats.listActiveChats(),
+      giftWhaleFeedSeen.countSeenMessages(),
+    ]);
+
+    const isActiveChat = activeChatList.some((chat) => chat.chatId === chatId);
+    const lines = [
+      "alive: yes",
+      `giftwhale_feed_seen: ${seenMessageCount}`,
+    ];
+
+    if (!isActiveChat) {
+      lines.push("warning: this chat is not active. use /start to activate.");
+    }
+
+    await ctx.reply(lines.join("\n"));
   });
 
   return {

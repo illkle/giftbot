@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { AppDb } from "./client";
 import { giftWhaleFeedSeenMessagesTable } from "./schema";
 
@@ -9,6 +9,7 @@ type SeenFeedMessageKey = {
 
 type GiftWhaleFeedSeenStore = {
   markSeenIfNew: (key: SeenFeedMessageKey) => Promise<boolean>;
+  countSeenMessages: () => Promise<number>;
 };
 
 function createGiftWhaleFeedSeenStore(db: AppDb): GiftWhaleFeedSeenStore {
@@ -40,8 +41,18 @@ function createGiftWhaleFeedSeenStore(db: AppDb): GiftWhaleFeedSeenStore {
     return true;
   };
 
+  const countSeenMessages: GiftWhaleFeedSeenStore["countSeenMessages"] = async () => {
+    const row = db
+      .select({ count: sql<number>`count(*)` })
+      .from(giftWhaleFeedSeenMessagesTable)
+      .get();
+
+    return Number(row?.count ?? 0);
+  };
+
   return {
     markSeenIfNew,
+    countSeenMessages,
   };
 }
 

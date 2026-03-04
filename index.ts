@@ -16,7 +16,7 @@ console.info(`[db] ready at ${resolvedPath}`);
 const cronStateStore = createCronStateStore(db);
 const activeChats = createActiveChatStore(db);
 const giftWhaleFeedSeen = createGiftWhaleFeedSeenStore(db);
-const telegramRuntime = createTelegramRuntime(config, activeChats);
+const telegramRuntime = createTelegramRuntime(config, activeChats, giftWhaleFeedSeen);
 
 const cronRunner = createCronRunner({
   jobs,

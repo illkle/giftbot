@@ -230,8 +230,19 @@ function parseGiftTable(html: string): GiftTableData {
   return data;
 }
 
-function formatNotificationMessage(payload: GiftNotificationPayload): string {
-  return payload.notificationMessageHtml;
+function formatNotificationMessage(
+  payload: GiftNotificationPayload,
+  matchedFilterDescription?: string,
+): string {
+  if (!matchedFilterDescription) {
+    return payload.notificationMessageHtml;
+  }
+
+  return [
+    `match: ${escapeHtml(matchedFilterDescription)}`,
+    "",
+    payload.notificationMessageHtml,
+  ].join("\n");
 }
 
 async function fetchHtml(url: string): Promise<string> {
@@ -373,22 +384,27 @@ export const giftWhaleFeedWatcherJob: CronJobDefinition = {
               continue;
             }
 
+            let matchedFilterDescription: string | undefined;
             if (filterConfig) {
               const matchedConditions = getMatchingGiftFilterConditions(filterConfig, giftTable);
               if (matchedConditions.length === 0) {
                 skippedByFilterCount += 1;
                 continue;
               }
+
+              matchedFilterDescription = matchedConditions
+                .map((condition) => `${condition.field}:${condition.value}`)
+                .join(", ");
             }
 
-            const message = formatNotificationMessage(payload);
+            const message = formatNotificationMessage(payload, matchedFilterDescription);
 
             events.push({
               type: "info",
               source: "giftwhalefeed-watcher",
               chatId: chat.chatId,
               message,
-              html:true,
+              html: true,
             });
             notifiedCount += 1;
           }

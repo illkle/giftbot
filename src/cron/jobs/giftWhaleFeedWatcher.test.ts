@@ -50,6 +50,7 @@ function createContext(options: {
   };
   const giftWhaleFeedSeen: GiftWhaleFeedSeenStore = {
     markSeenIfNew: vi.fn(options.markSeenIfNew),
+    countSeenMessages: vi.fn(async () => 0),
   };
 
   return {
@@ -167,6 +168,8 @@ describe("giftWhaleFeedWatcherJob", () => {
     expect(markSeenIfNew).toHaveBeenCalledTimes(2);
     expect(events).toHaveLength(2);
     expect(events.map((event) => event.chatId)).toEqual(["101", "102"]);
+    expect(events[0]?.message).not.toContain("match:");
+    expect(events[1]?.message).toContain("match: backdrop:lemon");
     expect(events[0]?.message).toContain("🎉 GIFT SOLD!");
     expect(events[0]?.message).toContain('<a href="https://t.me/nft/NEW">Westside Sign #2</a>');
     expect(events[1]?.message).toContain(
@@ -175,6 +178,49 @@ describe("giftWhaleFeedWatcherJob", () => {
     expect(ctx.logger.warn).toHaveBeenCalledWith(
       expect.stringContaining("invalid stored filter for chat 104"),
     );
+  });
+
+  it("includes match: prefix when a chat filter matches", async () => {
+    const feedHtml = `
+      <div class="tgme_widget_message_wrap">
+        <time datetime="2026-03-04T10:20:00Z"></time>
+        <div class="tgme_widget_message_text js-message_text" dir="auto">
+          🎉 GIFT SOLD!<br/><br/>🏷 <a href="https://t.me/nft/FILTERED">Filtered Gift #1</a><br/>└ Sold on <a href="https://t.me/mrkt/app?startapp=123">MRKT</a>
+        </div>
+      </div>
+    `;
+    const nftHtml = `
+      <table class="tgme_gift_table">
+        <tr><th>Backdrop</th><td>LemonGrass Glow</td></tr>
+      </table>
+    `;
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url === "https://t.me/s/giftwhalefeed") {
+          return htmlResponse(feedHtml);
+        }
+        if (url === "https://t.me/nft/FILTERED") {
+          return htmlResponse(nftHtml);
+        }
+        throw new Error(`Unexpected URL in test: ${url}`);
+      }),
+    );
+
+    const ctx = createContext({
+      initialSyncComplete: true,
+      chats: [{ chatId: "501", giftFilterConfig: "backdrop:lemon" }],
+      markSeenIfNew: async () => true,
+    });
+
+    const events = await giftWhaleFeedWatcherJob.run(ctx);
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.chatId).toBe("501");
+    expect(events[0]?.message).toContain("match: backdrop:lemon");
+    expect(events[0]?.message).toContain('<a href="https://t.me/nft/FILTERED">Filtered Gift #1</a>');
   });
 
   it("returns a structured error event when feed fetch fails", async () => {
@@ -245,6 +291,7 @@ describe("giftWhaleFeedWatcherJob", () => {
 
     expect(events).toHaveLength(1);
     expect(events[0]?.chatId).toBe("200");
+    expect(events[0]?.message).not.toContain("match:");
     expect(events[0]?.message).toContain('<a href="https://t.me/nft/GOOD">Good Gift #1</a>');
     expect(ctx.logger.error).toHaveBeenCalledWith(
       expect.stringContaining("failed to process https://t.me/nft/BAD"),
@@ -313,6 +360,7 @@ describe("giftWhaleFeedWatcherJob", () => {
       ].join("\n"),
     );
 
+    expect(portalsMessage).not.toContain("match:");
     expect(portalsMessage).toContain(
       '🏷 <a href="https://t.me/nft/HeartLocket-1522">Heart Locket #1522</a>',
     );

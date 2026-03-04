@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppConfig } from "../config";
 import type { ActiveChatStore } from "../db/activeChats";
+import type { GiftWhaleFeedSeenStore } from "../db/giftWhaleFeedSeen";
 
 const { createTelegramBotMock } = vi.hoisted(() => ({
   createTelegramBotMock: vi.fn(),
@@ -65,6 +66,14 @@ function buildActiveChatsStore(): ActiveChatStore {
   };
 }
 
+function buildGiftWhaleFeedSeenStore(
+  messageCount = 0,
+): Pick<GiftWhaleFeedSeenStore, "countSeenMessages"> {
+  return {
+    countSeenMessages: vi.fn(async () => messageCount),
+  };
+}
+
 describe("createTelegramRuntime", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -77,7 +86,8 @@ describe("createTelegramRuntime", () => {
 
     const { createTelegramRuntime } = await import("./processor");
     const activeChats = buildActiveChatsStore();
-    createTelegramRuntime(buildConfig(), activeChats);
+    const giftWhaleFeedSeen = buildGiftWhaleFeedSeenStore();
+    createTelegramRuntime(buildConfig(), activeChats, giftWhaleFeedSeen);
 
     const reply = vi.fn(async () => {
       return;
@@ -98,7 +108,8 @@ describe("createTelegramRuntime", () => {
 
     const { createTelegramRuntime } = await import("./processor");
     const activeChats = buildActiveChatsStore();
-    createTelegramRuntime(buildConfig(), activeChats);
+    const giftWhaleFeedSeen = buildGiftWhaleFeedSeenStore();
+    createTelegramRuntime(buildConfig(), activeChats, giftWhaleFeedSeen);
 
     const reply = vi.fn(async () => {
       return;
@@ -120,7 +131,8 @@ describe("createTelegramRuntime", () => {
 
     const { createTelegramRuntime } = await import("./processor");
     const activeChats = buildActiveChatsStore();
-    createTelegramRuntime(buildConfig(), activeChats);
+    const giftWhaleFeedSeen = buildGiftWhaleFeedSeenStore();
+    createTelegramRuntime(buildConfig(), activeChats, giftWhaleFeedSeen);
 
     const reply = vi.fn(async () => {
       return;
@@ -146,7 +158,8 @@ describe("createTelegramRuntime", () => {
 
     const { createTelegramRuntime } = await import("./processor");
     const activeChats = buildActiveChatsStore();
-    createTelegramRuntime(buildConfig(), activeChats);
+    const giftWhaleFeedSeen = buildGiftWhaleFeedSeenStore();
+    createTelegramRuntime(buildConfig(), activeChats, giftWhaleFeedSeen);
 
     const reply = vi.fn(async () => {
       return;
@@ -166,7 +179,12 @@ describe("createTelegramRuntime", () => {
 
     const { createTelegramRuntime } = await import("./processor");
     const activeChats = buildActiveChatsStore();
-    const runtime = createTelegramRuntime(buildConfig({ defaultChatId: "999" }), activeChats);
+    const giftWhaleFeedSeen = buildGiftWhaleFeedSeenStore();
+    const runtime = createTelegramRuntime(
+      buildConfig({ defaultChatId: "999" }),
+      activeChats,
+      giftWhaleFeedSeen,
+    );
 
     await runtime.process([
       {
@@ -180,6 +198,7 @@ describe("createTelegramRuntime", () => {
         source: "giftwhalefeed-watcher",
         message: "watcher payload",
         metadata: { tier: 3 },
+        html: true,
       },
       {
         type: "external_api_error",
@@ -219,7 +238,12 @@ describe("createTelegramRuntime", () => {
 
     const { createTelegramRuntime } = await import("./processor");
     const activeChats = buildActiveChatsStore();
-    const runtime = createTelegramRuntime(buildConfig({ defaultChatId: undefined }), activeChats);
+    const giftWhaleFeedSeen = buildGiftWhaleFeedSeenStore();
+    const runtime = createTelegramRuntime(
+      buildConfig({ defaultChatId: undefined }),
+      activeChats,
+      giftWhaleFeedSeen,
+    );
 
     await runtime.process([
       {
@@ -235,6 +259,59 @@ describe("createTelegramRuntime", () => {
       expect.objectContaining({
         source: "test",
       }),
+    );
+  });
+
+  it("returns health status and seen count for active chat", async () => {
+    const fakeBot = createFakeBot();
+    createTelegramBotMock.mockReturnValue(fakeBot);
+
+    const { createTelegramRuntime } = await import("./processor");
+    const activeChats = buildActiveChatsStore();
+    activeChats.listActiveChats = vi.fn(async () => [{ chatId: "700", giftFilterConfig: null }]);
+    const giftWhaleFeedSeen = buildGiftWhaleFeedSeenStore(1234);
+    createTelegramRuntime(buildConfig(), activeChats, giftWhaleFeedSeen);
+
+    const reply = vi.fn(async () => {
+      return;
+    });
+    await fakeBot.commandHandlers.health!({
+      chat: { id: 700 },
+      reply,
+    });
+
+    expect(reply).toHaveBeenCalledWith(
+      expect.stringContaining("alive: yes"),
+    );
+    expect(reply).toHaveBeenCalledWith(
+      expect.stringContaining("giftwhale_feed_seen: 1234"),
+    );
+    expect(reply).toHaveBeenCalledWith(expect.not.stringContaining("warning:"));
+  });
+
+  it("returns health warning when chat is not active", async () => {
+    const fakeBot = createFakeBot();
+    createTelegramBotMock.mockReturnValue(fakeBot);
+
+    const { createTelegramRuntime } = await import("./processor");
+    const activeChats = buildActiveChatsStore();
+    activeChats.listActiveChats = vi.fn(async () => [{ chatId: "701", giftFilterConfig: null }]);
+    const giftWhaleFeedSeen = buildGiftWhaleFeedSeenStore(5);
+    createTelegramRuntime(buildConfig(), activeChats, giftWhaleFeedSeen);
+
+    const reply = vi.fn(async () => {
+      return;
+    });
+    await fakeBot.commandHandlers.health!({
+      chat: { id: 9999 },
+      reply,
+    });
+
+    expect(reply).toHaveBeenCalledWith(
+      expect.stringContaining("giftwhale_feed_seen: 5"),
+    );
+    expect(reply).toHaveBeenCalledWith(
+      expect.stringContaining("warning: this chat is not active. use /start to activate."),
     );
   });
 });
