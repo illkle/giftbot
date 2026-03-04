@@ -122,7 +122,15 @@ function createTelegramRuntime(config: AppConfig, activeChats: ActiveChatStore):
           continue;
         }
 
-        await bot.api.sendMessage(chatId, formatEventMessage(event));
+        const message = formatEventMessage(event);
+        if (event.html) {
+          await bot.api.sendMessage(chatId, message, {
+            parse_mode: "HTML",
+          });
+        }else{
+          await bot.api.sendMessage(chatId, message);
+        }
+
       }
     },
     startPolling() {

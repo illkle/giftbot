@@ -1,6 +1,4 @@
 import { load } from "cheerio";
-import { isValid, parseISO } from "date-fns";
-import { formatInTimeZone } from "date-fns-tz";
 import {
   getMatchingGiftFilterConditions,
   parseGiftFilterConfig,
@@ -8,23 +6,24 @@ import {
 import type { GiftFilterConfig, GiftTableData } from "../../filters/giftFilterConfig";
 import type { BotEvent } from "../../events/types";
 import type { CronJobDefinition } from "../types";
+import type { AnyNode } from "domhandler";
 
 const FEED_URL = "https://t.me/s/giftwhalefeed";
 const NFT_HOST = "t.me";
+const TELEGRAM_BASE_URL = "https://t.me";
+const MESSAGE_TEXT_SELECTOR = ".tgme_widget_message_text.js-message_text";
 const INITIAL_SYNC_STATE_KEY = "giftwhalefeed-watcher:initial-sync-complete";
 
 type FeedMessageLink = {
   messageTime: string;
   nftLink: string;
+  notificationMessageHtml: string;
 };
 
 type GiftNotificationPayload = {
-  messageTime: string;
-  nftLink: string;
+  notificationMessageHtml: string;
   giftTable: GiftTableData;
 };
-
-const DISPLAY_TIME_FORMAT = "MMMM dd HH:mm:ss";
 
 function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
@@ -32,7 +31,7 @@ function normalizeWhitespace(value: string): string {
 
 function normalizeNftLink(value: string): string | undefined {
   try {
-    const url = new URL(value, "https://t.me");
+    const url = new URL(value, TELEGRAM_BASE_URL);
     if (url.hostname !== NFT_HOST || !url.pathname.startsWith("/nft/")) {
       return undefined;
     }
@@ -40,6 +39,122 @@ function normalizeNftLink(value: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function normalizeMrktLink(value: string): string | undefined {
+  try {
+    const url = new URL(value, TELEGRAM_BASE_URL);
+    if (url.hostname !== NFT_HOST || !url.pathname.startsWith("/mrkt/")) {
+      return undefined;
+    }
+    return `https://${NFT_HOST}${url.pathname}${url.search}`;
+  } catch {
+    return undefined;
+  }
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function escapeHtmlAttribute(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
+}
+
+function normalizeTextNode(value: string): string {
+  return value.replace(/\s+/g, " ");
+}
+
+function normalizeFeedLink(href: string, anchorText: string, nftLink: string): string | undefined {
+  const normalizedNftLink = normalizeNftLink(href);
+  if (normalizedNftLink === nftLink) {
+    return normalizedNftLink;
+  }
+
+  if (anchorText.toUpperCase() === "MRKT") {
+    return normalizeMrktLink(href);
+  }
+
+  return undefined;
+}
+
+function renderMessageNode(node: AnyNode, $: ReturnType<typeof load>, nftLink: string): string {
+  if (node.type === "text") {
+    const normalizedText = normalizeTextNode(node.data);
+    if (!normalizedText.trim()) {
+      return " ";
+    }
+    return escapeHtml(normalizedText);
+  }
+
+  if (node.type !== "tag") {
+    return "";
+  }
+
+  const tagName = node.tagName.toLowerCase();
+
+  if (tagName === "br") {
+    return "\n";
+  }
+
+  if (tagName === "a") {
+    const anchorText = normalizeWhitespace($(node).text());
+    if (!anchorText) {
+      return "";
+    }
+
+    const href = $(node).attr("href");
+    if (!href) {
+      return escapeHtml(anchorText);
+    }
+
+    const normalizedLink = normalizeFeedLink(href, anchorText, nftLink);
+    if (!normalizedLink) {
+      return escapeHtml(anchorText);
+    }
+
+    return `<a href="${escapeHtmlAttribute(normalizedLink)}">${escapeHtml(anchorText)}</a>`;
+  }
+
+  if (tagName === "code") {
+    return escapeHtml(normalizeWhitespace($(node).text()));
+  }
+
+  return node.children.map((childNode) => renderMessageNode(childNode, $, nftLink)).join("");
+}
+
+function normalizeRenderedMessageHtml(value: string): string {
+  return value
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function buildNotificationMessageHtml(
+  $: ReturnType<typeof load>,
+  messageTextNodes: AnyNode[],
+  nftLink: string,
+): string {
+  if (messageTextNodes.length === 0) {
+    return `<a href="${escapeHtmlAttribute(nftLink)}">${escapeHtml(nftLink)}</a>`;
+  }
+
+  const rendered = messageTextNodes
+    .map((node) => renderMessageNode(node, $, nftLink))
+    .join("");
+  const normalized = normalizeRenderedMessageHtml(rendered);
+
+  if (!normalized) {
+    return `<a href="${escapeHtmlAttribute(nftLink)}">${escapeHtml(nftLink)}</a>`;
+  }
+
+  return normalized;
 }
 
 function parseFeedMessageLinks(html: string): FeedMessageLink[] {
@@ -54,6 +169,11 @@ function parseFeedMessageLinks(html: string): FeedMessageLink[] {
       return;
     }
 
+    const messageTextNodes = messageElement
+      .find(MESSAGE_TEXT_SELECTOR)
+      .first()
+      .contents()
+      .toArray();
     const linksInMessage = new Set<string>();
     messageElement.find("a[href]").each((__, anchor) => {
       const href = $(anchor).attr("href");
@@ -72,7 +192,11 @@ function parseFeedMessageLinks(html: string): FeedMessageLink[] {
         continue;
       }
       uniqueKeys.add(key);
-      results.push({ messageTime, nftLink });
+      results.push({
+        messageTime,
+        nftLink,
+        notificationMessageHtml: buildNotificationMessageHtml($, messageTextNodes, nftLink),
+      });
     }
   });
 
@@ -106,32 +230,8 @@ function parseGiftTable(html: string): GiftTableData {
   return data;
 }
 
-function formatMessageTime(rawTime: string, timezone: string): string {
-  const parsed = parseISO(rawTime);
-  if (!isValid(parsed)) {
-    return rawTime;
-  }
-
-  try {
-    return formatInTimeZone(parsed, timezone, DISPLAY_TIME_FORMAT);
-  } catch {
-    return formatInTimeZone(parsed, "UTC", DISPLAY_TIME_FORMAT);
-  }
-}
-
-function formatNotificationMessage(
-  payload: GiftNotificationPayload,
-  timezone: string,
-  matchedFilterDescription: string,
-): string {
-  const giftRows = Object.entries(payload.giftTable).map(([key, value]) => `${key}: ${value}`);
-  return [
-    `Time: ${formatMessageTime(payload.messageTime, timezone)}`,
-    `Matched filter: ${matchedFilterDescription}`,
-    ...(giftRows.length > 0 ? ["", ...giftRows] : []),
-    "",
-    `NFT: ${payload.nftLink}`,
-  ].join("\n");
+function formatNotificationMessage(payload: GiftNotificationPayload): string {
+  return payload.notificationMessageHtml;
 }
 
 async function fetchHtml(url: string): Promise<string> {
@@ -258,8 +358,7 @@ export const giftWhaleFeedWatcherJob: CronJobDefinition = {
           );
 
           const payload: GiftNotificationPayload = {
-            messageTime: unseen.messageTime,
-            nftLink: unseen.nftLink,
+            notificationMessageHtml: unseen.notificationMessageHtml,
             giftTable,
           };
 
@@ -274,30 +373,22 @@ export const giftWhaleFeedWatcherJob: CronJobDefinition = {
               continue;
             }
 
-            let matchedFilterDescription = "none (chat has no filter)";
             if (filterConfig) {
               const matchedConditions = getMatchingGiftFilterConditions(filterConfig, giftTable);
               if (matchedConditions.length === 0) {
                 skippedByFilterCount += 1;
                 continue;
               }
-
-              matchedFilterDescription = matchedConditions
-                .map((condition) => `${condition.field}:${condition.value}`)
-                .join(", ");
             }
 
-            const message = formatNotificationMessage(
-              payload,
-              timezone,
-              matchedFilterDescription,
-            );
+            const message = formatNotificationMessage(payload);
 
             events.push({
               type: "info",
               source: "giftwhalefeed-watcher",
               chatId: chat.chatId,
               message,
+              html:true,
             });
             notifiedCount += 1;
           }

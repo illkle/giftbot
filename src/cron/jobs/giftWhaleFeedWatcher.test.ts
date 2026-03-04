@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActiveChatStore } from "../../db/activeChats";
 import type { CronStateStore } from "../../db/cronStateStore";
@@ -27,7 +28,7 @@ function createContext(options: {
 }) {
   const logger = createLogger();
   const state: CronStateStore = {
-    getJson: vi.fn(async () => options.initialSyncComplete),
+    getJson: async <T>() => options.initialSyncComplete as T | undefined,
     setJson:
       options.setJson ??
       (vi.fn(async () => {
@@ -107,11 +108,15 @@ describe("giftWhaleFeedWatcherJob", () => {
     const feedHtml = `
       <div class="tgme_widget_message_wrap">
         <time datetime="2026-03-04T10:00:00Z"></time>
-        <a href="https://t.me/nft/OLD">old</a>
+        <div class="tgme_widget_message_text js-message_text" dir="auto">
+          🎉 GIFT SOLD!<br/><br/>🏷 <a href="https://t.me/nft/OLD">Old Gift #1</a><br/>└ Sold on <a href="https://t.me/mrkt/app?startapp=123">MRKT</a>
+        </div>
       </div>
       <div class="tgme_widget_message_wrap">
         <time datetime="2026-03-04T10:20:00Z"></time>
-        <a href="https://t.me/nft/NEW">new</a>
+        <div class="tgme_widget_message_text js-message_text" dir="auto">
+          🎉 GIFT SOLD!<br/><br/>🏷 <a href="https://t.me/nft/NEW">Westside Sign #2</a><br/>├ Model: <code>Bow Wizzle</code><br/>└ Sold on <a href="https://t.me/mrkt/app?startapp=123">MRKT</a>
+        </div>
       </div>
     `;
     const nftHtml = `
@@ -162,8 +167,11 @@ describe("giftWhaleFeedWatcherJob", () => {
     expect(markSeenIfNew).toHaveBeenCalledTimes(2);
     expect(events).toHaveLength(2);
     expect(events.map((event) => event.chatId)).toEqual(["101", "102"]);
-    expect(events[0]?.message).toContain("Matched filter: none (chat has no filter)");
-    expect(events[1]?.message).toContain("Matched filter: backdrop:lemon");
+    expect(events[0]?.message).toContain("🎉 GIFT SOLD!");
+    expect(events[0]?.message).toContain('<a href="https://t.me/nft/NEW">Westside Sign #2</a>');
+    expect(events[1]?.message).toContain(
+      '└ Sold on <a href="https://t.me/mrkt/app?startapp=123">MRKT</a>',
+    );
     expect(ctx.logger.warn).toHaveBeenCalledWith(
       expect.stringContaining("invalid stored filter for chat 104"),
     );
@@ -193,11 +201,15 @@ describe("giftWhaleFeedWatcherJob", () => {
     const feedHtml = `
       <div class="tgme_widget_message_wrap">
         <time datetime="2026-03-04T10:00:00Z"></time>
-        <a href="https://t.me/nft/BAD">bad</a>
+        <div class="tgme_widget_message_text js-message_text" dir="auto">
+          🎉 GIFT SOLD!<br/><br/>🏷 <a href="https://t.me/nft/BAD">Bad Gift #1</a>
+        </div>
       </div>
       <div class="tgme_widget_message_wrap">
         <time datetime="2026-03-04T10:01:00Z"></time>
-        <a href="https://t.me/nft/GOOD">good</a>
+        <div class="tgme_widget_message_text js-message_text" dir="auto">
+          🎉 GIFT SOLD!<br/><br/>🏷 <a href="https://t.me/nft/GOOD">Good Gift #1</a>
+        </div>
       </div>
     `;
     const goodNftHtml = `
@@ -233,10 +245,78 @@ describe("giftWhaleFeedWatcherJob", () => {
 
     expect(events).toHaveLength(1);
     expect(events[0]?.chatId).toBe("200");
-    expect(events[0]?.message).toContain("https://t.me/nft/GOOD");
+    expect(events[0]?.message).toContain('<a href="https://t.me/nft/GOOD">Good Gift #1</a>');
     expect(ctx.logger.error).toHaveBeenCalledWith(
       expect.stringContaining("failed to process https://t.me/nft/BAD"),
       expect.any(Error),
     );
+  });
+
+  it("parses saved feed fixture and keeps only NFT + MRKT links", async () => {
+    const feedHtml = readFileSync(
+      new URL("./fixtures/giftwhalefeed.page.example.html", import.meta.url),
+      "utf8",
+    );
+    const allowedNftLinks = new Set([
+      "https://t.me/nft/HeartLocket-450",
+      "https://t.me/nft/HeartLocket-1522",
+    ]);
+    const seenKeys = new Set<string>();
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url === "https://t.me/s/giftwhalefeed") {
+          return htmlResponse(feedHtml);
+        }
+
+        if (allowedNftLinks.has(url)) {
+          return htmlResponse(`<table class="tgme_gift_table"></table>`);
+        }
+
+        throw new Error(`Unexpected URL in test: ${url}`);
+      }),
+    );
+
+    const ctx = createContext({
+      initialSyncComplete: true,
+      chats: [{ chatId: "300", giftFilterConfig: null }],
+      markSeenIfNew: async (key) => {
+        const uniqueKey = `${key.messageTime}::${key.nftLink}`;
+        if (seenKeys.has(uniqueKey)) {
+          return false;
+        }
+        seenKeys.add(uniqueKey);
+
+        return allowedNftLinks.has(key.nftLink);
+      },
+    });
+
+    const events = await giftWhaleFeedWatcherJob.run(ctx);
+
+    expect(events).toHaveLength(2);
+
+    const mrktMessage = events.find((event) => event.message.includes("Heart Locket #450"))?.message;
+    const portalsMessage = events.find((event) =>
+      event.message.includes("Heart Locket #1522"),
+    )?.message;
+
+    expect(mrktMessage).toBe(
+      [
+        "🎉 GIFT SOLD!",
+        "",
+        '🏷 <a href="https://t.me/nft/HeartLocket-450">Heart Locket #450</a>',
+        "├ Model: Toy Joy",
+        "├ Price: 1738.99 TON (~$2254.25)",
+        '└ Sold on <a href="https://t.me/mrkt/app?startapp=363826839">MRKT</a>',
+      ].join("\n"),
+    );
+
+    expect(portalsMessage).toContain(
+      '🏷 <a href="https://t.me/nft/HeartLocket-1522">Heart Locket #1522</a>',
+    );
+    expect(portalsMessage).toContain("└ Sold on Portals");
+    expect(portalsMessage).not.toContain("https://t.me/portals/market");
   });
 });

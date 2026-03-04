@@ -82,7 +82,7 @@ describe("createTelegramRuntime", () => {
     const reply = vi.fn(async () => {
       return;
     });
-    await fakeBot.commandHandlers.start({
+    await fakeBot.commandHandlers.start!({
       chat: { id: 42 },
       match: "   ",
       reply,
@@ -103,7 +103,7 @@ describe("createTelegramRuntime", () => {
     const reply = vi.fn(async () => {
       return;
     });
-    await fakeBot.commandHandlers.start({
+    await fakeBot.commandHandlers.start!({
       chat: { id: 55 },
       match: "backdrop:lemongrass|orange",
       reply,
@@ -125,7 +125,7 @@ describe("createTelegramRuntime", () => {
     const reply = vi.fn(async () => {
       return;
     });
-    await fakeBot.commandHandlers.start({
+    await fakeBot.commandHandlers.start!({
       chat: { id: 99 },
       match: " Backdrop: LemonGrass , symbol: Shield ",
       reply,
@@ -151,7 +151,7 @@ describe("createTelegramRuntime", () => {
     const reply = vi.fn(async () => {
       return;
     });
-    await fakeBot.commandHandlers.stop({
+    await fakeBot.commandHandlers.stop!({
       chat: { id: 77 },
       reply,
     });
@@ -198,6 +198,9 @@ describe("createTelegramRuntime", () => {
       2,
       "999",
       expect.stringMatching(/^watcher payload\n/),
+      {
+        parse_mode: "HTML",
+      },
     );
     expect(fakeBot.api.sendMessage).toHaveBeenNthCalledWith(
       3,
