@@ -25,6 +25,8 @@ type ActiveChatStore = {
   markInactive: (chatId: string, topicId?: number | null) => Promise<void>;
   listActiveChats: (chatType: string) => Promise<ActiveChat[]>;
   listAllChats: () => Promise<StoredChat[]>;
+  pruneDisabledChats: () => Promise<StoredChat[]>;
+  deleteChatsByChatId: (chatId: string) => Promise<StoredChat[]>;
 };
 
 function createActiveChatStore(db: AppDb): ActiveChatStore {
@@ -126,11 +128,67 @@ function createActiveChatStore(db: AppDb): ActiveChatStore {
     }));
   };
 
+  const pruneDisabledChats: ActiveChatStore["pruneDisabledChats"] = async () => {
+    const rows = db
+      .select({
+        chatId: telegramChatsTable.chatId,
+        topicId: telegramChatsTable.topicId,
+        watchMode: telegramChatsTable.watchMode,
+        giftFilterConfig: telegramChatsTable.giftFilterConfig,
+      })
+      .from(telegramChatsTable)
+      .where(eq(telegramChatsTable.watchMode, ""))
+      .orderBy(asc(telegramChatsTable.chatId), asc(telegramChatsTable.topicId))
+      .all();
+
+    if (rows.length === 0) {
+      return [];
+    }
+
+    db.delete(telegramChatsTable).where(eq(telegramChatsTable.watchMode, "")).run();
+
+    return rows.map((row) => ({
+      chatId: row.chatId,
+      topicId: row.topicId === 0 ? null : row.topicId,
+      watchMode: row.watchMode,
+      giftFilterConfig: row.giftFilterConfig,
+    }));
+  };
+
+  const deleteChatsByChatId: ActiveChatStore["deleteChatsByChatId"] = async (chatId: string) => {
+    const rows = db
+      .select({
+        chatId: telegramChatsTable.chatId,
+        topicId: telegramChatsTable.topicId,
+        watchMode: telegramChatsTable.watchMode,
+        giftFilterConfig: telegramChatsTable.giftFilterConfig,
+      })
+      .from(telegramChatsTable)
+      .where(eq(telegramChatsTable.chatId, chatId))
+      .orderBy(asc(telegramChatsTable.chatId), asc(telegramChatsTable.topicId))
+      .all();
+
+    if (rows.length === 0) {
+      return [];
+    }
+
+    db.delete(telegramChatsTable).where(eq(telegramChatsTable.chatId, chatId)).run();
+
+    return rows.map((row) => ({
+      chatId: row.chatId,
+      topicId: row.topicId === 0 ? null : row.topicId,
+      watchMode: row.watchMode,
+      giftFilterConfig: row.giftFilterConfig,
+    }));
+  };
+
   return {
     markActive,
     markInactive,
     listActiveChats,
     listAllChats,
+    pruneDisabledChats,
+    deleteChatsByChatId,
   };
 }
 

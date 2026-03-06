@@ -64,6 +64,8 @@ function buildActiveChatsStore(): ActiveChatStore {
     }),
     listActiveChats: vi.fn(async (_chatType: string) => []),
     listAllChats: vi.fn(async () => []),
+    pruneDisabledChats: vi.fn(async () => []),
+    deleteChatsByChatId: vi.fn(async (_chatId: string) => []),
   };
 }
 
@@ -457,6 +459,122 @@ describe("createTelegramRuntime", () => {
         "Subscriptions (2):",
         "chat_id=100 topic_id=none watch_mode=sales filter=backdrop:lemongrass",
         "chat_id=200 topic_id=77 watch_mode=disabled filter=none",
+      ].join("\n"),
+    );
+  });
+
+  it("prunes disabled chats for /prune from admin chat", async () => {
+    const fakeBot = createFakeBot();
+    createTelegramBotMock.mockReturnValue(fakeBot);
+
+    const { createTelegramRuntime } = await import("./processor");
+    const activeChats = buildActiveChatsStore();
+    activeChats.pruneDisabledChats = vi.fn(async () => [
+      {
+        chatId: "200",
+        topicId: 77,
+        watchMode: "",
+        giftFilterConfig: null,
+      },
+      {
+        chatId: "201",
+        topicId: null,
+        watchMode: "",
+        giftFilterConfig: "symbol:shield",
+      },
+    ]);
+    const feedSeen = buildFeedSeenStore();
+    createTelegramRuntime(buildConfig({ adminChatId: "123" }), activeChats, feedSeen);
+
+    const reply = vi.fn(async () => {
+      return;
+    });
+    await fakeBot.commandHandlers.prune!({
+      chat: { id: 123 },
+      reply,
+    });
+
+    expect(activeChats.pruneDisabledChats).toHaveBeenCalledTimes(1);
+    expect(reply).toHaveBeenCalledWith(
+      [
+        "Prune complete: removed 2 subscription(s).",
+        "chat_id=200 topic_id=77",
+        "chat_id=201 topic_id=none",
+      ].join("\n"),
+    );
+  });
+
+  it("requires a chat id argument for /kill", async () => {
+    const fakeBot = createFakeBot();
+    createTelegramBotMock.mockReturnValue(fakeBot);
+
+    const { createTelegramRuntime } = await import("./processor");
+    const activeChats = buildActiveChatsStore();
+    const feedSeen = buildFeedSeenStore();
+    createTelegramRuntime(buildConfig({ adminChatId: "123" }), activeChats, feedSeen);
+
+    const reply = vi.fn(async () => {
+      return;
+    });
+    await fakeBot.commandHandlers.kill!({
+      chat: { id: 123 },
+      msg: { text: "/kill" },
+      reply,
+    });
+
+    expect(activeChats.deleteChatsByChatId).not.toHaveBeenCalled();
+    expect(reply).toHaveBeenCalledWith("Usage: /kill <chat_id>");
+  });
+
+  it("removes matching chat subscriptions and sends a final message for /kill", async () => {
+    const fakeBot = createFakeBot();
+    createTelegramBotMock.mockReturnValue(fakeBot);
+
+    const { createTelegramRuntime } = await import("./processor");
+    const activeChats = buildActiveChatsStore();
+    activeChats.deleteChatsByChatId = vi.fn(async () => [
+      {
+        chatId: "164009819",
+        topicId: null,
+        watchMode: "sales",
+        giftFilterConfig: null,
+      },
+      {
+        chatId: "164009819",
+        topicId: 12,
+        watchMode: "crafts",
+        giftFilterConfig: "backdrop:lemongrass",
+      },
+    ]);
+    const feedSeen = buildFeedSeenStore();
+    createTelegramRuntime(buildConfig({ adminChatId: "123" }), activeChats, feedSeen);
+
+    const reply = vi.fn(async () => {
+      return;
+    });
+    await fakeBot.commandHandlers.kill!({
+      chat: { id: 123 },
+      msg: { text: "/kill 164009819" },
+      reply,
+    });
+
+    expect(activeChats.deleteChatsByChatId).toHaveBeenCalledWith("164009819");
+    expect(fakeBot.api.sendMessage).toHaveBeenNthCalledWith(
+      1,
+      "164009819",
+      "Watching stopped. Please restart if needed",
+    );
+    expect(fakeBot.api.sendMessage).toHaveBeenNthCalledWith(
+      2,
+      "164009819",
+      "Watching stopped. Please restart if needed",
+      { message_thread_id: 12 },
+    );
+    expect(reply).toHaveBeenCalledWith(
+      [
+        "Kill complete: removed 2 subscription(s).",
+        "chat_id=164009819 topic_id=none",
+        "chat_id=164009819 topic_id=12",
       ].join("\n"),
     );
   });

@@ -64,10 +64,7 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "giftwhale_feed_seen_messages_message_time_nft_link_pk": {
-          "columns": [
-            "message_time",
-            "nft_link"
-          ],
+          "columns": ["message_time", "nft_link"],
           "name": "giftwhale_feed_seen_messages_message_time_nft_link_pk"
         }
       },
@@ -126,10 +123,7 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "telegram_chats_chat_id_topic_id_pk": {
-          "columns": [
-            "chat_id",
-            "topic_id"
-          ],
+          "columns": ["chat_id", "topic_id"],
           "name": "telegram_chats_chat_id_topic_id_pk"
         }
       },

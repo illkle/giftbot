@@ -28,7 +28,7 @@ Required:
 Recommended:
 
 - `TELEGRAM_CHAT_ID` (default destination chat)
-- `TELEGRAM_ADMIN_CHAT_ID` (chat allowed to use `/subs`)
+- `TELEGRAM_ADMIN_CHAT_ID` (chat allowed to use `/subs`, `/prune`, and `/kill <chat_id>`)
 - `CRON_TIMEZONE`
 - `RUN_JOBS_ON_STARTUP`
 - `DATABASE_PATH`
@@ -66,7 +66,7 @@ How to test:
 4. Wait up to one minute.
 5. You should receive messages for newly seen matching feed items.
 6. Send `/stop` to disable notifications for that chat.
-7. If `TELEGRAM_ADMIN_CHAT_ID` is set, that chat can run `/subs` to list all rows from `telegram_chats`.
+7. If `TELEGRAM_ADMIN_CHAT_ID` is set, that chat can run `/subs` to list all rows from `telegram_chats`, `/prune` to remove disabled rows, and `/kill <chat_id>` to delete one chat's subscriptions after sending a final stop message.
 
 ## Schema migrations
 
@@ -84,22 +84,20 @@ Commit the generated files in `drizzle/`. They will be applied automatically on 
 2. Export a `CronJobDefinition`:
 
 ```ts
-import type { CronJobDefinition } from '../types';
+import type { CronJobDefinition } from "../types";
 
 export const myWatcherJob: CronJobDefinition = {
-  name: 'my-watcher',
-  schedule: '*/5 * * * *',
+  name: "my-watcher",
+  schedule: "*/5 * * * *",
   async run(ctx) {
-    const lastSeen = await ctx.state.getJson<{ value: string }>(
-      'my-watcher:last-seen',
-    );
-    await ctx.state.setJson('my-watcher:last-seen', { value: 'new-value' });
+    const lastSeen = await ctx.state.getJson<{ value: string }>("my-watcher:last-seen");
+    await ctx.state.setJson("my-watcher:last-seen", { value: "new-value" });
 
     return [
       {
-        type: 'info',
-        source: 'my-source',
-        message: 'Something changed',
+        type: "info",
+        source: "my-source",
+        message: "Something changed",
       },
     ];
   },

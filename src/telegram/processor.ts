@@ -15,6 +15,7 @@ type TelegramRuntime = {
 
 type TopicContext = CommandContext<Context>;
 const WATCHER_SOURCES_WITH_RAW_HTML = new Set(["giftwhalefeed-watcher", "craftalerts-watcher"]);
+const FINAL_KILL_MESSAGE = "Watching stopped. Please restart if needed";
 
 function formatEventMessage(event: BotEvent): string {
   const headerByType: Record<BotEvent["type"], string> = {
@@ -104,6 +105,24 @@ function formatStoredChatsMessage(
   return [`Subscriptions (${chats.length}):`, ...lines].join("\n");
 }
 
+function formatChatLocation(chat: { chatId: string; topicId: number | null }): string {
+  return `chat_id=${chat.chatId} topic_id=${chat.topicId ?? "none"}`;
+}
+
+function formatRemovedChatsMessage(
+  action: string,
+  chats: Awaited<ReturnType<ActiveChatStore["listAllChats"]>>,
+): string {
+  if (chats.length === 0) {
+    return `${action}: nothing to remove.`;
+  }
+
+  return [
+    `${action}: removed ${chats.length} subscription(s).`,
+    ...chats.map(formatChatLocation),
+  ].join("\n");
+}
+
 function getTopicId(ctx: TopicContext): number | undefined {
   const topicId = ctx.msg?.message_thread_id;
   if (typeof topicId !== "number") {
@@ -125,6 +144,20 @@ function shouldSkipCommandWithoutMention(ctx: TopicContext): boolean {
   const hasMention = ctx.msg?.text.toLowerCase().includes(ctx.me.username?.toLowerCase());
 
   return !hasMention;
+}
+
+function isAdminChat(config: AppConfig, chatId: string): boolean {
+  return Boolean(config.adminChatId && chatId === config.adminChatId);
+}
+
+function getCommandArgument(ctx: TopicContext): string | undefined {
+  const text = ctx.msg?.text?.trim();
+  if (!text) {
+    return undefined;
+  }
+
+  const [, ...parts] = text.split(/\s+/);
+  return parts[0];
 }
 
 function createTelegramRuntime(
@@ -239,13 +272,66 @@ function createTelegramRuntime(
 
   bot.command("subs", async (ctx) => {
     const chatId = String(ctx.chat.id);
-    if (!config.adminChatId || chatId !== config.adminChatId) {
+    if (!isAdminChat(config, chatId)) {
       await ctx.reply(`Forbidden for ${ctx.chat.id}`);
       return;
     }
 
     const chats = await activeChats.listAllChats();
     await ctx.reply(formatStoredChatsMessage(chats));
+  });
+
+  bot.command("prune", async (ctx) => {
+    const chatId = String(ctx.chat.id);
+    if (!isAdminChat(config, chatId)) {
+      await ctx.reply(`Forbidden for ${ctx.chat.id}`);
+      return;
+    }
+
+    const removedChats = await activeChats.pruneDisabledChats();
+    await ctx.reply(formatRemovedChatsMessage("Prune complete", removedChats));
+  });
+
+  bot.command("kill", async (ctx) => {
+    const requesterChatId = String(ctx.chat.id);
+    if (!isAdminChat(config, requesterChatId)) {
+      await ctx.reply(`Forbidden for ${ctx.chat.id}`);
+      return;
+    }
+
+    const targetChatId = getCommandArgument(ctx);
+    if (!targetChatId) {
+      await ctx.reply("Usage: /kill <chat_id>");
+      return;
+    }
+
+    const removedChats = await activeChats.deleteChatsByChatId(targetChatId);
+    if (removedChats.length === 0) {
+      await ctx.reply(`No subscriptions found for chat_id=${targetChatId}.`);
+      return;
+    }
+
+    const sendResults = await Promise.allSettled(
+      removedChats.map((chat) => {
+        const sendOptions = chat.topicId === null ? undefined : { message_thread_id: chat.topicId };
+        if (sendOptions) {
+          return bot.api.sendMessage(chat.chatId, FINAL_KILL_MESSAGE, sendOptions);
+        }
+
+        return bot.api.sendMessage(chat.chatId, FINAL_KILL_MESSAGE);
+      }),
+    );
+
+    const failedChats = removedChats.filter(
+      (_chat, index) => sendResults[index]?.status === "rejected",
+    );
+    const responseLines = [formatRemovedChatsMessage("Kill complete", removedChats)];
+    if (failedChats.length > 0) {
+      responseLines.push(`Final message failed for ${failedChats.length} destination(s).`);
+      responseLines.push(...failedChats.map(formatChatLocation));
+    }
+
+    await ctx.reply(responseLines.join("\n"));
   });
 
   return {

@@ -57,6 +57,8 @@ function createContext(options: {
     listAllChats: vi.fn(async () =>
       options.chats.map((chat) => ({ ...chat, watchMode: "crafts" })),
     ),
+    pruneDisabledChats: vi.fn(async () => []),
+    deleteChatsByChatId: vi.fn(async (_chatId: string) => []),
   };
   const feedSeen: FeedSeenStore = {
     markSeenIfNew: vi.fn(options.markSeenIfNew),
