@@ -62,7 +62,7 @@ function buildActiveChatsStore(): ActiveChatStore {
     markInactive: vi.fn(async () => {
       return;
     }),
-    listActiveChats: vi.fn(async () => []),
+    listActiveChats: vi.fn(async (_chatType: string) => []),
   };
 }
 
@@ -309,7 +309,7 @@ describe("createTelegramRuntime", () => {
 
     const { createTelegramRuntime } = await import("./processor");
     const activeChats = buildActiveChatsStore();
-    activeChats.listActiveChats = vi.fn(async () => [
+    activeChats.listActiveChats = vi.fn(async (_chatType: string) => [
       {
         chatId: "700",
         topicId: null,
@@ -341,7 +341,7 @@ describe("createTelegramRuntime", () => {
 
     const { createTelegramRuntime } = await import("./processor");
     const activeChats = buildActiveChatsStore();
-    activeChats.listActiveChats = vi.fn(async () => [
+    activeChats.listActiveChats = vi.fn(async (_chatType: string) => [
       { chatId: "701", topicId: null, giftFilterConfig: null },
     ]);
     const giftWhaleFeedSeen = buildGiftWhaleFeedSeenStore(5);

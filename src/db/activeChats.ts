@@ -2,6 +2,8 @@ import { eq } from "drizzle-orm";
 import type { AppDb } from "./client";
 import { telegramChatsTable } from "./schema";
 
+const SALES_CHAT_TYPE = "sales";
+
 type ActiveChat = {
   chatId: string;
   topicId: number | null;
@@ -15,7 +17,7 @@ type ActiveChatStore = {
     giftFilterConfig?: string | null,
   ) => Promise<void>;
   markInactive: (chatId: string, topicId?: number | null) => Promise<void>;
-  listActiveChats: () => Promise<ActiveChat[]>;
+  listActiveChats: (chatType: string) => Promise<ActiveChat[]>;
 };
 
 function createActiveChatStore(db: AppDb): ActiveChatStore {
@@ -28,7 +30,7 @@ function createActiveChatStore(db: AppDb): ActiveChatStore {
     const persistedTopicId = topicId ?? 0;
 
     const conflictSet: Partial<typeof telegramChatsTable.$inferInsert> = {
-      isActive: true,
+      watchMode: SALES_CHAT_TYPE,
       updatedAt: now,
     };
 
@@ -42,7 +44,7 @@ function createActiveChatStore(db: AppDb): ActiveChatStore {
       .values({
         chatId,
         topicId: persistedTopicId,
-        isActive: true,
+        watchMode: SALES_CHAT_TYPE,
         giftFilterConfig: giftFilterConfig ?? null,
         firstSeenAt: now,
         updatedAt: now,
@@ -64,21 +66,21 @@ function createActiveChatStore(db: AppDb): ActiveChatStore {
       .values({
         chatId,
         topicId: persistedTopicId,
-        isActive: false,
+        watchMode: "",
         firstSeenAt: now,
         updatedAt: now,
       })
       .onConflictDoUpdate({
         target: [telegramChatsTable.chatId, telegramChatsTable.topicId],
         set: {
-          isActive: false,
+          watchMode: "",
           updatedAt: now,
         },
       })
       .run();
   };
 
-  const listActiveChats: ActiveChatStore["listActiveChats"] = async () => {
+  const listActiveChats: ActiveChatStore["listActiveChats"] = async (chatType: string) => {
     const rows = db
       .select({
         chatId: telegramChatsTable.chatId,
@@ -86,7 +88,7 @@ function createActiveChatStore(db: AppDb): ActiveChatStore {
         giftFilterConfig: telegramChatsTable.giftFilterConfig,
       })
       .from(telegramChatsTable)
-      .where(eq(telegramChatsTable.isActive, true))
+      .where(eq(telegramChatsTable.watchMode, chatType))
       .all();
 
     return rows.map((row) => ({
@@ -104,4 +106,5 @@ function createActiveChatStore(db: AppDb): ActiveChatStore {
 }
 
 export { createActiveChatStore };
+export { SALES_CHAT_TYPE };
 export type { ActiveChat, ActiveChatStore };

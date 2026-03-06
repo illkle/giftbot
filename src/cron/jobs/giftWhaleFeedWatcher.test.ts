@@ -46,7 +46,7 @@ function createContext(options: {
     markInactive: vi.fn(async () => {
       return;
     }),
-    listActiveChats: vi.fn(async () => options.chats),
+    listActiveChats: vi.fn(async (_chatType: string) => options.chats),
   };
   const giftWhaleFeedSeen: GiftWhaleFeedSeenStore = {
     markSeenIfNew: vi.fn(options.markSeenIfNew),

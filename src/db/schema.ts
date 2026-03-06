@@ -12,7 +12,7 @@ const telegramChatsTable = sqliteTable(
   {
     chatId: text("chat_id").notNull(),
     topicId: integer("topic_id").notNull().default(0),
-    isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+    watchMode: text("watch_mode").notNull().default(""),
     giftFilterConfig: text("gift_filter_config"),
     firstSeenAt: integer("first_seen_at").notNull(),
     updatedAt: integer("updated_at").notNull(),

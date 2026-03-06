@@ -1,4 +1,5 @@
 import type { AppConfig } from "../config";
+import { SALES_CHAT_TYPE } from "../db/activeChats";
 import type { ActiveChatStore } from "../db/activeChats";
 import type { GiftWhaleFeedSeenStore } from "../db/giftWhaleFeedSeen";
 import type { BotEvent } from "../events/types";
@@ -147,7 +148,7 @@ function createTelegramRuntime(
     const chatId = String(ctx.chat.id);
     const topicId = getTopicId(ctx) ?? null;
     const [activeChatList, seenMessageCount] = await Promise.all([
-      activeChats.listActiveChats(),
+      activeChats.listActiveChats(SALES_CHAT_TYPE),
       giftWhaleFeedSeen.countSeenMessages(),
     ]);
 

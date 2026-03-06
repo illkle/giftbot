@@ -1,3 +1,4 @@
+import { SALES_CHAT_TYPE } from "../../db/activeChats";
 import type { BotEvent } from "../../events/types";
 import type { CronJobDefinition } from "../types";
 import {
@@ -75,7 +76,7 @@ export const giftWhaleFeedWatcherJob: CronJobDefinition = {
         return events;
       }
 
-      const chats = await activeChats.listActiveChats();
+      const chats = await activeChats.listActiveChats(SALES_CHAT_TYPE);
       logger.info(`[giftwhalefeed-watcher] run ${runId} loaded ${chats.length} active chat(s)`);
       if (chats.length === 0) {
         logger.info(`[giftwhalefeed-watcher] run ${runId} no active chats to notify`);
