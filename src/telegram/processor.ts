@@ -20,7 +20,7 @@ const FINAL_KILL_MESSAGE = "Watching stopped. Please restart if needed";
 function formatEventMessage(event: BotEvent): string {
   const headerByType: Record<BotEvent["type"], string> = {
     external_api_change: "API change detected",
-    external_api_error: "API watcher error",
+    error: "Error",
     info: "Info",
   };
 
@@ -148,6 +148,14 @@ function shouldSkipCommandWithoutMention(ctx: TopicContext): boolean {
 
 function isAdminChat(config: AppConfig, chatId: string): boolean {
   return Boolean(config.adminChatId && chatId === config.adminChatId);
+}
+
+function resolveEventChatId(config: AppConfig, event: BotEvent): string | undefined {
+  if (event.type === "error") {
+    return config.adminChatId ?? event.chatId ?? config.defaultChatId;
+  }
+
+  return event.chatId ?? config.defaultChatId;
 }
 
 function getCommandArgument(ctx: TopicContext): string | undefined {
@@ -337,7 +345,7 @@ function createTelegramRuntime(
   return {
     async process(events) {
       for (const event of events) {
-        const chatId = event.chatId ?? config.defaultChatId;
+        const chatId = resolveEventChatId(config, event);
         if (!chatId) {
           console.warn("Skipping event with no chat id", event);
           continue;

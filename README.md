@@ -28,7 +28,7 @@ Required:
 Recommended:
 
 - `TELEGRAM_CHAT_ID` (default destination chat)
-- `TELEGRAM_ADMIN_CHAT_ID` (chat allowed to use `/subs`, `/prune`, and `/kill <chat_id>`)
+- `TELEGRAM_ADMIN_CHAT_ID` (chat allowed to use `/subs`, `/prune`, and `/kill <chat_id>`, and receives all bot error alerts)
 - `CRON_TIMEZONE`
 - `RUN_JOBS_ON_STARTUP`
 - `DATABASE_PATH`

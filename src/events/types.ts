@@ -1,4 +1,4 @@
-type EventType = "external_api_change" | "external_api_error" | "info";
+type EventType = "external_api_change" | "error" | "info";
 
 type BotEvent = {
   type: EventType;

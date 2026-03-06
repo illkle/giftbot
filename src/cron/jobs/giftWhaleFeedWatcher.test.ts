@@ -182,19 +182,28 @@ describe("giftWhaleFeedWatcherJob", () => {
     });
 
     const events = await giftWhaleFeedWatcherJob.run(ctx);
+    const infoEvents = events.filter((event) => event.type === "info");
 
     expect(markSeenIfNew).toHaveBeenCalledTimes(2);
-    expect(events).toHaveLength(2);
-    expect(events.map((event) => event.chatId)).toEqual(["101", "102"]);
-    expect(events.map((event) => event.topicId)).toEqual([undefined, 500]);
-    expect(events[0]?.message).not.toMatch(/\n\n#[A-Za-z_]+$/);
-    expect(events[1]?.message).toContain("#backdrop_lemon");
-    expect(events[0]?.message).toContain("🎉 GIFT SOLD!");
-    expect(events[0]?.message).toContain('<a href="https://t.me/nft/NEW">Westside Sign #2</a>');
-    expect(events[1]?.message).toContain(
+    expect(events).toHaveLength(3);
+    expect(infoEvents).toHaveLength(2);
+    expect(infoEvents.map((event) => event.chatId)).toEqual(["101", "102"]);
+    expect(infoEvents.map((event) => event.topicId)).toEqual([undefined, 500]);
+    expect(infoEvents[0]?.message).not.toMatch(/\n\n#[A-Za-z_]+$/);
+    expect(infoEvents[1]?.message).toContain("#backdrop_lemon");
+    expect(infoEvents[0]?.message).toContain("🎉 GIFT SOLD!");
+    expect(infoEvents[0]?.message).toContain('<a href="https://t.me/nft/NEW">Westside Sign #2</a>');
+    expect(infoEvents[1]?.message).toContain(
       '└ Sold on <a href="https://t.me/mrkt/app?startapp=123">MRKT</a>',
     );
-    expect(events[1]?.message?.endsWith("#backdrop_lemon")).toBe(true);
+    expect(infoEvents[1]?.message?.endsWith("#backdrop_lemon")).toBe(true);
+    expect(events[0]).toMatchObject({
+      type: "error",
+      metadata: {
+        unseenCount: 2,
+        parsedCount: 2,
+      },
+    });
     expect(ctx.logger.warn).toHaveBeenCalledWith(
       expect.stringContaining("invalid stored filter for chat 104"),
     );
@@ -348,9 +357,50 @@ describe("giftWhaleFeedWatcherJob", () => {
     const events = await giftWhaleFeedWatcherJob.run(ctx);
 
     expect(events).toHaveLength(1);
-    expect(events[0]?.type).toBe("external_api_error");
+    expect(events[0]?.type).toBe("error");
     expect(events[0]?.source).toBe("giftwhalefeed-watcher");
     expect(events[0]?.message).toContain("HTTP 500");
+  });
+
+  it("emits an error when all parsed feed messages are unseen", async () => {
+    const feedHtml = `
+      <div class="tgme_widget_message_wrap">
+        <time datetime="2026-03-04T10:00:00Z"></time>
+        <div class="tgme_widget_message_text js-message_text" dir="auto">
+          🎉 GIFT SOLD!<br/><br/>🏷 <a href="https://t.me/nft/A1">Gift A #1</a>
+        </div>
+      </div>
+      <div class="tgme_widget_message_wrap">
+        <time datetime="2026-03-04T10:01:00Z"></time>
+        <div class="tgme_widget_message_text js-message_text" dir="auto">
+          🎉 GIFT SOLD!<br/><br/>🏷 <a href="https://t.me/nft/B2">Gift B #2</a>
+        </div>
+      </div>
+    `;
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => htmlResponse(feedHtml)),
+    );
+
+    const ctx = createContext({
+      initialSyncComplete: true,
+      chats: [],
+      markSeenIfNew: async () => true,
+    });
+
+    const events = await giftWhaleFeedWatcherJob.run(ctx);
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: "error",
+      source: "giftwhalefeed-watcher",
+      metadata: {
+        unseenCount: 2,
+        parsedCount: 2,
+      },
+    });
+    expect(events[0]?.message).toContain("All parsed feed messages are unseen: 2/2");
   });
 
   it("continues processing remaining unseen links after one NFT fetch failure", async () => {
@@ -398,11 +448,20 @@ describe("giftWhaleFeedWatcherJob", () => {
     });
 
     const events = await giftWhaleFeedWatcherJob.run(ctx);
+    const infoEvents = events.filter((event) => event.type === "info");
 
-    expect(events).toHaveLength(1);
-    expect(events[0]?.chatId).toBe("200");
-    expect(events[0]?.message).not.toMatch(/\n\n#[A-Za-z_]+$/);
-    expect(events[0]?.message).toContain('<a href="https://t.me/nft/GOOD">Good Gift #1</a>');
+    expect(events).toHaveLength(2);
+    expect(infoEvents).toHaveLength(1);
+    expect(infoEvents[0]?.chatId).toBe("200");
+    expect(infoEvents[0]?.message).not.toMatch(/\n\n#[A-Za-z_]+$/);
+    expect(infoEvents[0]?.message).toContain('<a href="https://t.me/nft/GOOD">Good Gift #1</a>');
+    expect(events[0]).toMatchObject({
+      type: "error",
+      metadata: {
+        unseenCount: 2,
+        parsedCount: 2,
+      },
+    });
     expect(ctx.logger.error).toHaveBeenCalledWith(
       expect.stringContaining("failed to process https://t.me/nft/BAD"),
       expect.any(Error),

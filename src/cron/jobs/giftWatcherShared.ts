@@ -496,6 +496,22 @@ function createGiftFeedWatcherJob(options: CreateGiftFeedWatcherJobOptions): Cro
           `[${name}] run ${runId} detected ${unseenLinks.length} unseen item(s) out of ${messageLinks.length}`,
         );
 
+        if (messageLinks.length > 1 && unseenLinks.length === messageLinks.length) {
+          const errorMessage =
+            `All parsed feed messages are unseen: ${unseenLinks.length}/${messageLinks.length}. ` +
+            "Possible feed state reset or parser issue.";
+          logger.error(`[${name}] run ${runId} ${errorMessage}`);
+          events.push({
+            type: "error",
+            source: name,
+            message: errorMessage,
+            metadata: {
+              unseenCount: unseenLinks.length,
+              parsedCount: messageLinks.length,
+            },
+          });
+        }
+
         if (unseenLinks.length === 0) {
           logger.info(`[${name}] run ${runId} no new messages`);
           return events;
@@ -604,7 +620,7 @@ function createGiftFeedWatcherJob(options: CreateGiftFeedWatcherJobOptions): Cro
         logger.error(`[${name}] run ${runId} failed after ${Date.now() - runStartedAt}ms`, error);
         return [
           {
-            type: "external_api_error",
+            type: "error",
             source: name,
             message: `Failed to process feed: ${String(error)}`,
           },

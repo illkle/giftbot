@@ -259,7 +259,7 @@ describe("createTelegramRuntime", () => {
         html: true,
       },
       {
-        type: "external_api_error",
+        type: "error",
         source: "giftwhalefeed-watcher",
         message: "network issue",
       },
@@ -296,7 +296,7 @@ describe("createTelegramRuntime", () => {
     expect(fakeBot.api.sendMessage).toHaveBeenNthCalledWith(
       3,
       "999",
-      expect.stringContaining("API watcher error"),
+      expect.stringContaining("Error (giftwhalefeed-watcher)"),
     );
     expect(fakeBot.api.sendMessage).toHaveBeenNthCalledWith(
       4,
@@ -307,6 +307,63 @@ describe("createTelegramRuntime", () => {
     expect(fakeBot.api.sendMessage).toHaveBeenNthCalledWith(5, "101", "crafted payload", {
       parse_mode: "HTML",
     });
+  });
+
+  it("routes errors to the admin chat when configured", async () => {
+    const fakeBot = createFakeBot();
+    createTelegramBotMock.mockReturnValue(fakeBot);
+
+    const { createTelegramRuntime } = await import("./processor");
+    const activeChats = buildActiveChatsStore();
+    const feedSeen = buildFeedSeenStore();
+    const runtime = createTelegramRuntime(
+      buildConfig({ defaultChatId: "999", adminChatId: "123" }),
+      activeChats,
+      feedSeen,
+    );
+
+    await runtime.process([
+      {
+        type: "error",
+        source: "giftwhalefeed-watcher",
+        message: "Failed to process feed: Error: network issue",
+      },
+    ]);
+
+    expect(fakeBot.api.sendMessage).toHaveBeenCalledTimes(1);
+    expect(fakeBot.api.sendMessage).toHaveBeenCalledWith(
+      "123",
+      expect.stringContaining("Failed to process feed: Error: network issue"),
+    );
+  });
+
+  it("routes error events to the admin chat even when they have an explicit chat id", async () => {
+    const fakeBot = createFakeBot();
+    createTelegramBotMock.mockReturnValue(fakeBot);
+
+    const { createTelegramRuntime } = await import("./processor");
+    const activeChats = buildActiveChatsStore();
+    const feedSeen = buildFeedSeenStore();
+    const runtime = createTelegramRuntime(
+      buildConfig({ defaultChatId: "999", adminChatId: "123" }),
+      activeChats,
+      feedSeen,
+    );
+
+    await runtime.process([
+      {
+        type: "error",
+        source: "custom-source",
+        chatId: "555",
+        message: "unexpected failure",
+      },
+    ]);
+
+    expect(fakeBot.api.sendMessage).toHaveBeenCalledTimes(1);
+    expect(fakeBot.api.sendMessage).toHaveBeenCalledWith(
+      "123",
+      expect.stringContaining("unexpected failure"),
+    );
   });
 
   it("skips events that have no explicit chat and no default chat", async () => {
