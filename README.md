@@ -4,7 +4,7 @@ Telegram bot with a pluggable cron watcher layer:
 
 1. Cron jobs run on a schedule and return `BotEvent[]`.
 2. Cron jobs can persist/read state via a shared Drizzle SQLite store (`ctx.state`).
-3. Active chats are tracked in SQLite (`/start -sales` activates, `/stop` deactivates), including per-chat gift filters.
+3. Active chats are tracked in SQLite (`/start -c sales` activates, `/stop` deactivates), including per-chat gift filters.
 4. The feed watcher stores processed `(message_time, nft_link)` pairs to avoid reprocessing.
 5. Events are forwarded to the Telegram processor.
 6. Telegram processor formats events and sends messages via Telegram API.
@@ -57,8 +57,8 @@ On first run, it performs an initial sync (marks current feed entries as seen) a
 
 How to test:
 
-1. Open your bot chat in Telegram and send `/start -sales`.
-2. (Optional) set/update a filter with `/start -sales backdrop:lemongrass,backdrop:orange,symbol:shield`.
+1. Open your bot chat in Telegram and send `/start -c sales`.
+2. (Optional) set/update a filter with `/start -c sales -f backdrop:lemongrass,backdrop:orange,symbol:shield`.
 3. Filter semantics:
    - each condition is `field:value`.
    - comma-separated conditions are OR-ed.

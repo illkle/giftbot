@@ -1,3 +1,4 @@
+import type { CommandContext, Context } from "grammy";
 import type { AppConfig } from "../config";
 import { SALES_CHAT_TYPE } from "../db/activeChats";
 import type { ActiveChatStore } from "../db/activeChats";
@@ -5,20 +6,14 @@ import type { GiftWhaleFeedSeenStore } from "../db/giftWhaleFeedSeen";
 import type { BotEvent } from "../events/types";
 import { parseGiftFilterConfig, stringifyGiftFilterConfig } from "../filters/giftFilterConfig";
 import { createTelegramBot } from "./bot";
+import { parseStartArgs, SALES_CHANNEL, shouldSkipForGroupChat } from "./startArgs";
 
 type TelegramRuntime = {
   process: (events: BotEvent[]) => Promise<void>;
   startPolling: () => void;
 };
 
-type TopicContext = {
-  msg?: {
-    message_thread_id?: number;
-  };
-};
-
-const SALES_START_FLAG = "-sales";
-const SALES_START_FLAG_PATTERN = /(^|\s)-sales(?=\s|$)/;
+type TopicContext = CommandContext<Context>;
 
 function formatEventMessage(event: BotEvent): string {
   const headerByType: Record<BotEvent["type"], string> = {
@@ -41,11 +36,12 @@ function formatEventMessage(event: BotEvent): string {
 
 function formatFilterHelpMessage(): string {
   return [
-    `Activation requires ${SALES_START_FLAG}.`,
-    "Filter format: field:value,other_field:value",
+    `Required channel: -c ${SALES_CHANNEL}.`,
+    "Optional bot mention: @botusername (required in group chats).",
+    "Optional filter: -f field:value,other_field:value",
     "Match is case-insensitive and uses substring search.",
     "Comma-separated conditions are OR.",
-    `Example: /start ${SALES_START_FLAG} backdrop:lemongrass,backdrop:orange,symbol:shield`,
+    `Example: /start -c ${SALES_CHANNEL} -f backdrop:lemongrass,backdrop:orange,symbol:shield`,
   ].join("\n");
 }
 
@@ -102,12 +98,18 @@ function getTopicId(ctx: TopicContext): number | undefined {
   return topicId;
 }
 
-function extractSalesStartConfig(rawInput: string): string | null {
-  if (!SALES_START_FLAG_PATTERN.test(rawInput)) {
-    return null;
+function isGroupChat(chatType: string | undefined): boolean {
+  return chatType === "group" || chatType === "supergroup";
+}
+
+function shouldSkipCommandWithoutMention(ctx: TopicContext): boolean {
+  if (!isGroupChat(ctx.chat.type)) {
+    return false;
   }
 
-  return rawInput.replace(SALES_START_FLAG_PATTERN, " ").trim();
+  const hasMention = ctx.msg?.text.toLowerCase().includes(ctx.me.username?.toLowerCase());
+
+  return !hasMention;
 }
 
 function createTelegramRuntime(
@@ -120,17 +122,30 @@ function createTelegramRuntime(
   bot.command("start", async (ctx) => {
     const chatId = String(ctx.chat.id);
     const topicId = getTopicId(ctx);
-    const rawConfigInput = typeof ctx.match === "string" ? ctx.match.trim() : "";
-    const salesConfigInput = extractSalesStartConfig(rawConfigInput);
+    const parsedArgs = parseStartArgs({
+      text: ctx.msg?.text,
+      chatType: ctx.chat.type,
+      botUsername: ctx.me.username,
+    });
 
     console.log("RECEIVE START COMMAND", chatId, topicId, ctx.msg?.date);
 
-    if (salesConfigInput === null) {
-      await ctx.reply(`Ignored. Use /start ${SALES_START_FLAG} to activate Giftbot for this chat.`);
+    if (shouldSkipForGroupChat(parsedArgs)) {
       return;
     }
 
-    if (salesConfigInput.length === 0) {
+    if (parsedArgs.error) {
+      await ctx.reply(
+        [
+          `Could not parse /start arguments: ${parsedArgs.error}`,
+          "",
+          formatFilterHelpMessage(),
+        ].join("\n"),
+      );
+      return;
+    }
+
+    if (parsedArgs.filter === null) {
       await activeChats.markActive(chatId, topicId, null);
       await ctx.reply(
         [
@@ -143,7 +158,7 @@ function createTelegramRuntime(
       return;
     }
 
-    const parsed = parseGiftFilterConfig(salesConfigInput);
+    const parsed = parseGiftFilterConfig(parsedArgs.filter);
     if (!parsed.ok) {
       await ctx.reply(
         [`Could not save filter: ${parsed.error}`, "", formatFilterHelpMessage()].join("\n"),
@@ -157,6 +172,12 @@ function createTelegramRuntime(
   });
 
   bot.command("stop", async (ctx) => {
+    console.log("RECEIVED stop command");
+
+    if (shouldSkipCommandWithoutMention(ctx)) {
+      return;
+    }
+
     const chatId = String(ctx.chat.id);
     const topicId = getTopicId(ctx);
     await activeChats.markInactive(chatId, topicId);
@@ -164,6 +185,12 @@ function createTelegramRuntime(
   });
 
   bot.command("status", async (ctx) => {
+    console.log("RECEIVED status command");
+
+    if (shouldSkipCommandWithoutMention(ctx)) {
+      return;
+    }
+
     const chatId = String(ctx.chat.id);
     const topicId = getTopicId(ctx) ?? null;
     const [activeChatList, seenMessageCount] = await Promise.all([

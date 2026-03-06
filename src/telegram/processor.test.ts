@@ -81,7 +81,7 @@ describe("createTelegramRuntime", () => {
     vi.clearAllMocks();
   });
 
-  it("ignores /start when -sales is missing", async () => {
+  it("rejects /start when -c sales is missing", async () => {
     const fakeBot = createFakeBot();
     createTelegramBotMock.mockReturnValue(fakeBot);
 
@@ -95,18 +95,18 @@ describe("createTelegramRuntime", () => {
     });
     await fakeBot.commandHandlers.start!({
       chat: { id: 42 },
-      match: "   ",
-      msg: { date: 0 },
+      msg: { date: 0, text: "/start" },
+      me: { username: "giftbot" },
       reply,
     });
 
     expect(activeChats.markActive).not.toHaveBeenCalled();
     expect(reply).toHaveBeenCalledWith(
-      expect.stringContaining("Use /start -sales to activate Giftbot"),
+      expect.stringContaining("Could not parse /start arguments: Missing required -c option."),
     );
   });
 
-  it("stores topic id when /start -sales is sent in a topic", async () => {
+  it("stores topic id when /start -c sales is sent in a topic", async () => {
     const fakeBot = createFakeBot();
     createTelegramBotMock.mockReturnValue(fakeBot);
 
@@ -120,8 +120,8 @@ describe("createTelegramRuntime", () => {
     });
     await fakeBot.commandHandlers.start!({
       chat: { id: 42 },
-      msg: { message_thread_id: 999 },
-      match: "-sales",
+      msg: { message_thread_id: 999, text: "/start -c sales" },
+      me: { username: "giftbot" },
       reply,
     });
 
@@ -142,8 +142,8 @@ describe("createTelegramRuntime", () => {
     });
     await fakeBot.commandHandlers.start!({
       chat: { id: 55 },
-      match: "-sales backdrop:lemongrass|orange",
-      msg: { date: 0 },
+      msg: { date: 0, text: "/start -c sales -f backdrop:lemongrass|orange" },
+      me: { username: "giftbot" },
       reply,
     });
 
@@ -166,8 +166,8 @@ describe("createTelegramRuntime", () => {
     });
     await fakeBot.commandHandlers.start!({
       chat: { id: 99 },
-      match: "-sales Backdrop: LemonGrass , symbol: Shield ",
-      msg: { date: 0 },
+      msg: { date: 0, text: "/start -c sales -f Backdrop: LemonGrass , symbol: Shield " },
+      me: { username: "giftbot" },
       reply,
     });
 
@@ -378,7 +378,7 @@ describe("createTelegramRuntime", () => {
     });
 
     expect(activeChats.listAllChats).not.toHaveBeenCalled();
-    expect(reply).toHaveBeenCalledWith("Forbidden.");
+    expect(reply).toHaveBeenCalledWith("Forbidden for 999");
   });
 
   it("returns all stored chats for /subs from admin chat", async () => {
