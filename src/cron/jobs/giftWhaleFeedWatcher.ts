@@ -136,6 +136,15 @@ function normalizeRenderedMessageHtml(value: string): string {
     .trim();
 }
 
+function formatMatchedFilterHashtag(value: string): string {
+  const normalized = value
+    .trim()
+    .replace(/[^a-zA-Z]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  return `#${normalized}`;
+}
+
 function buildNotificationMessageHtml(
   $: ReturnType<typeof load>,
   messageTextNodes: AnyNode[],
@@ -237,9 +246,9 @@ function formatNotificationMessage(
   }
 
   return [
-    `match: ${escapeHtml(matchedFilterDescription)}`,
-    "",
     payload.notificationMessageHtml,
+    "",
+    formatMatchedFilterHashtag(matchedFilterDescription),
   ].join("\n");
 }
 
