@@ -28,6 +28,7 @@ Required:
 Recommended:
 
 - `TELEGRAM_CHAT_ID` (default destination chat)
+- `TELEGRAM_ADMIN_CHAT_ID` (chat allowed to use `/subs`)
 - `CRON_TIMEZONE`
 - `RUN_JOBS_ON_STARTUP`
 - `DATABASE_PATH`
@@ -65,6 +66,7 @@ How to test:
 4. Wait up to one minute.
 5. You should receive messages for newly seen matching feed items.
 6. Send `/stop` to disable notifications for that chat.
+7. If `TELEGRAM_ADMIN_CHAT_ID` is set, that chat can run `/subs` to list all rows from `telegram_chats`.
 
 ## Schema migrations
 

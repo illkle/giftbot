@@ -63,6 +63,7 @@ function buildActiveChatsStore(): ActiveChatStore {
       return;
     }),
     listActiveChats: vi.fn(async (_chatType: string) => []),
+    listAllChats: vi.fn(async () => []),
   };
 }
 
@@ -357,5 +358,67 @@ describe("createTelegramRuntime", () => {
 
     expect(reply).toHaveBeenCalledWith(expect.stringContaining("Since start I parsed 5 messages"));
     expect(reply).toHaveBeenCalledWith(expect.stringContaining("Notifications INACTIVE"));
+  });
+
+  it("rejects /subs from non-admin chats", async () => {
+    const fakeBot = createFakeBot();
+    createTelegramBotMock.mockReturnValue(fakeBot);
+
+    const { createTelegramRuntime } = await import("./processor");
+    const activeChats = buildActiveChatsStore();
+    const giftWhaleFeedSeen = buildGiftWhaleFeedSeenStore();
+    createTelegramRuntime(buildConfig({ adminChatId: "123" }), activeChats, giftWhaleFeedSeen);
+
+    const reply = vi.fn(async () => {
+      return;
+    });
+    await fakeBot.commandHandlers.subs!({
+      chat: { id: 999 },
+      reply,
+    });
+
+    expect(activeChats.listAllChats).not.toHaveBeenCalled();
+    expect(reply).toHaveBeenCalledWith("Forbidden.");
+  });
+
+  it("returns all stored chats for /subs from admin chat", async () => {
+    const fakeBot = createFakeBot();
+    createTelegramBotMock.mockReturnValue(fakeBot);
+
+    const { createTelegramRuntime } = await import("./processor");
+    const activeChats = buildActiveChatsStore();
+    activeChats.listAllChats = vi.fn(async () => [
+      {
+        chatId: "100",
+        topicId: null,
+        watchMode: "sales",
+        giftFilterConfig: "backdrop:lemongrass",
+      },
+      {
+        chatId: "200",
+        topicId: 77,
+        watchMode: "",
+        giftFilterConfig: null,
+      },
+    ]);
+    const giftWhaleFeedSeen = buildGiftWhaleFeedSeenStore();
+    createTelegramRuntime(buildConfig({ adminChatId: "123" }), activeChats, giftWhaleFeedSeen);
+
+    const reply = vi.fn(async () => {
+      return;
+    });
+    await fakeBot.commandHandlers.subs!({
+      chat: { id: 123 },
+      reply,
+    });
+
+    expect(activeChats.listAllChats).toHaveBeenCalledTimes(1);
+    expect(reply).toHaveBeenCalledWith(
+      [
+        "Subscriptions (2):",
+        "chat_id=100 topic_id=none watch_mode=sales filter=backdrop:lemongrass",
+        "chat_id=200 topic_id=77 watch_mode=disabled filter=none",
+      ].join("\n"),
+    );
   });
 });

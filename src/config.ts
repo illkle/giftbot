@@ -1,6 +1,7 @@
 type AppConfig = {
   telegramBotToken: string;
   defaultChatId?: string;
+  adminChatId?: string;
   cronTimezone: string;
   runJobsOnStartup: boolean;
   databasePath: string;
@@ -27,6 +28,7 @@ export function getConfig(): AppConfig {
   return {
     telegramBotToken: getRequiredEnv("TELEGRAM_BOT_TOKEN"),
     defaultChatId: process.env.TELEGRAM_CHAT_ID,
+    adminChatId: process.env.TELEGRAM_ADMIN_CHAT_ID,
     cronTimezone: process.env.CRON_TIMEZONE ?? "UTC",
     runJobsOnStartup: parseBoolean(process.env.RUN_JOBS_ON_STARTUP, true),
     databasePath: process.env.DATABASE_PATH ?? "./data/giftbot.sqlite",

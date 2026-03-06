@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import type { AppDb } from "./client";
 import { telegramChatsTable } from "./schema";
 
@@ -10,6 +10,10 @@ type ActiveChat = {
   giftFilterConfig: string | null;
 };
 
+type StoredChat = ActiveChat & {
+  watchMode: string;
+};
+
 type ActiveChatStore = {
   markActive: (
     chatId: string,
@@ -18,6 +22,7 @@ type ActiveChatStore = {
   ) => Promise<void>;
   markInactive: (chatId: string, topicId?: number | null) => Promise<void>;
   listActiveChats: (chatType: string) => Promise<ActiveChat[]>;
+  listAllChats: () => Promise<StoredChat[]>;
 };
 
 function createActiveChatStore(db: AppDb): ActiveChatStore {
@@ -98,13 +103,34 @@ function createActiveChatStore(db: AppDb): ActiveChatStore {
     }));
   };
 
+  const listAllChats: ActiveChatStore["listAllChats"] = async () => {
+    const rows = db
+      .select({
+        chatId: telegramChatsTable.chatId,
+        topicId: telegramChatsTable.topicId,
+        watchMode: telegramChatsTable.watchMode,
+        giftFilterConfig: telegramChatsTable.giftFilterConfig,
+      })
+      .from(telegramChatsTable)
+      .orderBy(asc(telegramChatsTable.chatId), asc(telegramChatsTable.topicId))
+      .all();
+
+    return rows.map((row) => ({
+      chatId: row.chatId,
+      topicId: row.topicId === 0 ? null : row.topicId,
+      watchMode: row.watchMode,
+      giftFilterConfig: row.giftFilterConfig,
+    }));
+  };
+
   return {
     markActive,
     markInactive,
     listActiveChats,
+    listAllChats,
   };
 }
 
 export { createActiveChatStore };
 export { SALES_CHAT_TYPE };
-export type { ActiveChat, ActiveChatStore };
+export type { ActiveChat, ActiveChatStore, StoredChat };

@@ -74,6 +74,25 @@ function formatStartConfirmationMessage(giftFilterConfig: string): string {
   ].join("\n");
 }
 
+function formatStoredChatsMessage(
+  chats: Awaited<ReturnType<ActiveChatStore["listAllChats"]>>,
+): string {
+  if (chats.length === 0) {
+    return "No subscriptions found.";
+  }
+
+  const lines = chats.map((chat) =>
+    [
+      `chat_id=${chat.chatId}`,
+      `topic_id=${chat.topicId ?? "none"}`,
+      `watch_mode=${chat.watchMode || "disabled"}`,
+      `filter=${chat.giftFilterConfig ?? "none"}`,
+    ].join(" "),
+  );
+
+  return [`Subscriptions (${chats.length}):`, ...lines].join("\n");
+}
+
 function getTopicId(ctx: TopicContext): number | undefined {
   const topicId = ctx.msg?.message_thread_id;
   if (typeof topicId !== "number") {
@@ -163,6 +182,17 @@ function createTelegramRuntime(
     ];
 
     await ctx.reply(lines.join("\n"));
+  });
+
+  bot.command("subs", async (ctx) => {
+    const chatId = String(ctx.chat.id);
+    if (!config.adminChatId || chatId !== config.adminChatId) {
+      await ctx.reply(`Forbidden for ${ctx.chat.id}`);
+      return;
+    }
+
+    const chats = await activeChats.listAllChats();
+    await ctx.reply(formatStoredChatsMessage(chats));
   });
 
   return {
