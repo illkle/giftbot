@@ -20,14 +20,15 @@ const telegramChatsTable = sqliteTable(
   (table) => [primaryKey({ columns: [table.chatId, table.topicId] })],
 );
 
-const giftWhaleFeedSeenMessagesTable = sqliteTable(
+const feedSeenMessagesTable = sqliteTable(
   "giftwhale_feed_seen_messages",
   {
+    source: text("source").notNull().default("sales"),
     messageTime: text("message_time").notNull(),
     nftLink: text("nft_link").notNull(),
     firstSeenAt: integer("first_seen_at").notNull(),
   },
-  (table) => [primaryKey({ columns: [table.messageTime, table.nftLink] })],
+  (table) => [primaryKey({ columns: [table.source, table.messageTime, table.nftLink] })],
 );
 
-export { cronStateTable, telegramChatsTable, giftWhaleFeedSeenMessagesTable };
+export { cronStateTable, feedSeenMessagesTable, telegramChatsTable };

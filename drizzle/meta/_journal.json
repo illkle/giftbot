@@ -43,6 +43,13 @@
       "when": 1772795925569,
       "tag": "0005_acoustic_calypso",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1772800388574,
+      "tag": "0006_simple_ares",
+      "breakpoints": true
     }
   ]
 }

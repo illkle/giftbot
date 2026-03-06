@@ -13,6 +13,8 @@ type ParsedStartArgs = {
 };
 
 const SALES_CHANNEL = "sales";
+const CRAFTS_CHANNEL = "crafts";
+const SUPPORTED_CHANNELS = [SALES_CHANNEL, CRAFTS_CHANNEL] as const;
 
 function isGroupChat(chatType: string | undefined): boolean {
   return chatType === "group" || chatType === "supergroup";
@@ -125,7 +127,7 @@ function parseStartArgs({ text, chatType, botUsername }: StartArgsInput): Parsed
     return { ...baseResult, mention, filter, error: "Missing required -c option." };
   }
 
-  if (channel !== SALES_CHANNEL) {
+  if (!SUPPORTED_CHANNELS.includes(channel as (typeof SUPPORTED_CHANNELS)[number])) {
     return { ...baseResult, mention, channel, filter, error: `Unsupported channel: ${channel}` };
   }
 
@@ -146,4 +148,5 @@ function shouldSkipForGroupChat(parsedArgs: ParsedStartArgs): boolean {
 }
 
 export { SALES_CHANNEL, parseStartArgs, shouldSkipForGroupChat };
+export { CRAFTS_CHANNEL, SUPPORTED_CHANNELS };
 export type { ParsedStartArgs, StartArgsInput };

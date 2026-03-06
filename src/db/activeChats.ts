@@ -3,6 +3,7 @@ import type { AppDb } from "./client";
 import { telegramChatsTable } from "./schema";
 
 const SALES_CHAT_TYPE = "sales";
+const CRAFTS_CHAT_TYPE = "crafts";
 
 type ActiveChat = {
   chatId: string;
@@ -19,6 +20,7 @@ type ActiveChatStore = {
     chatId: string,
     topicId?: number | null,
     giftFilterConfig?: string | null,
+    watchMode?: string,
   ) => Promise<void>;
   markInactive: (chatId: string, topicId?: number | null) => Promise<void>;
   listActiveChats: (chatType: string) => Promise<ActiveChat[]>;
@@ -30,12 +32,13 @@ function createActiveChatStore(db: AppDb): ActiveChatStore {
     chatId: string,
     topicId?: number | null,
     giftFilterConfig?: string | null,
+    watchMode = SALES_CHAT_TYPE,
   ) => {
     const now = Date.now();
     const persistedTopicId = topicId ?? 0;
 
     const conflictSet: Partial<typeof telegramChatsTable.$inferInsert> = {
-      watchMode: SALES_CHAT_TYPE,
+      watchMode,
       updatedAt: now,
     };
 
@@ -49,7 +52,7 @@ function createActiveChatStore(db: AppDb): ActiveChatStore {
       .values({
         chatId,
         topicId: persistedTopicId,
-        watchMode: SALES_CHAT_TYPE,
+        watchMode,
         giftFilterConfig: giftFilterConfig ?? null,
         firstSeenAt: now,
         updatedAt: now,
@@ -132,5 +135,5 @@ function createActiveChatStore(db: AppDb): ActiveChatStore {
 }
 
 export { createActiveChatStore };
-export { SALES_CHAT_TYPE };
+export { CRAFTS_CHAT_TYPE, SALES_CHAT_TYPE };
 export type { ActiveChat, ActiveChatStore, StoredChat };

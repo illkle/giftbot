@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActiveChatStore } from "../../db/activeChats";
 import type { CronStateStore } from "../../db/cronStateStore";
-import type { GiftWhaleFeedSeenStore } from "../../db/giftWhaleFeedSeen";
+import type { FeedSeenStore } from "../../db/feedSeen";
 import { giftWhaleFeedWatcherJob } from "./giftWhaleFeedWatcher";
 
 function htmlResponse(html: string, status = 200): Response {
@@ -23,7 +23,7 @@ function createLogger() {
 function createContext(options: {
   initialSyncComplete: boolean | undefined;
   chats: Awaited<ReturnType<ActiveChatStore["listActiveChats"]>>;
-  markSeenIfNew: GiftWhaleFeedSeenStore["markSeenIfNew"];
+  markSeenIfNew: FeedSeenStore["markSeenIfNew"];
   setJson?: CronStateStore["setJson"];
 }) {
   const logger = createLogger();
@@ -49,7 +49,7 @@ function createContext(options: {
     listActiveChats: vi.fn(async (_chatType: string) => options.chats),
     listAllChats: vi.fn(async () => options.chats.map((chat) => ({ ...chat, watchMode: "sales" }))),
   };
-  const giftWhaleFeedSeen: GiftWhaleFeedSeenStore = {
+  const feedSeen: FeedSeenStore = {
     markSeenIfNew: vi.fn(options.markSeenIfNew),
     countSeenMessages: vi.fn(async () => 0),
   };
@@ -58,7 +58,7 @@ function createContext(options: {
     logger,
     state,
     activeChats,
-    giftWhaleFeedSeen,
+    feedSeen,
   };
 }
 
@@ -101,7 +101,7 @@ describe("giftWhaleFeedWatcherJob", () => {
     const events = await giftWhaleFeedWatcherJob.run(ctx);
 
     expect(events).toEqual([]);
-    expect(ctx.giftWhaleFeedSeen.markSeenIfNew).toHaveBeenCalledTimes(2);
+    expect(ctx.feedSeen.markSeenIfNew).toHaveBeenCalledTimes(2);
     expect(ctx.activeChats.listActiveChats).not.toHaveBeenCalled();
     expect(setJson).toHaveBeenCalledWith("giftwhalefeed-watcher:initial-sync-complete", true);
   });
@@ -130,14 +130,16 @@ describe("giftWhaleFeedWatcherJob", () => {
     `;
 
     const seenKeys = new Set<string>(["2026-03-04T10:00:00Z::https://t.me/nft/OLD"]);
-    const markSeenIfNew = vi.fn(async (key: { messageTime: string; nftLink: string }) => {
-      const seenKey = `${key.messageTime}::${key.nftLink}`;
-      if (seenKeys.has(seenKey)) {
-        return false;
-      }
-      seenKeys.add(seenKey);
-      return true;
-    });
+    const markSeenIfNew = vi.fn(
+      async (key: { source: string; messageTime: string; nftLink: string }) => {
+        const seenKey = `${key.source}::${key.messageTime}::${key.nftLink}`;
+        if (seenKeys.has(seenKey)) {
+          return false;
+        }
+        seenKeys.add(seenKey);
+        return true;
+      },
+    );
 
     vi.stubGlobal(
       "fetch",
@@ -423,7 +425,7 @@ describe("giftWhaleFeedWatcherJob", () => {
       initialSyncComplete: true,
       chats: [{ chatId: "300", topicId: null, giftFilterConfig: null }],
       markSeenIfNew: async (key) => {
-        const uniqueKey = `${key.messageTime}::${key.nftLink}`;
+        const uniqueKey = `${key.source}::${key.messageTime}::${key.nftLink}`;
         if (seenKeys.has(uniqueKey)) {
           return false;
         }

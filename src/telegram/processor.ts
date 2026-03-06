@@ -2,11 +2,11 @@ import type { CommandContext, Context } from "grammy";
 import type { AppConfig } from "../config";
 import { SALES_CHAT_TYPE } from "../db/activeChats";
 import type { ActiveChatStore } from "../db/activeChats";
-import type { GiftWhaleFeedSeenStore } from "../db/giftWhaleFeedSeen";
+import type { FeedSeenStore } from "../db/feedSeen";
 import type { BotEvent } from "../events/types";
 import { parseGiftFilterConfig, stringifyGiftFilterConfig } from "../filters/giftFilterConfig";
 import { createTelegramBot } from "./bot";
-import { parseStartArgs, SALES_CHANNEL, shouldSkipForGroupChat } from "./startArgs";
+import { CRAFTS_CHANNEL, parseStartArgs, SALES_CHANNEL, shouldSkipForGroupChat } from "./startArgs";
 
 type TelegramRuntime = {
   process: (events: BotEvent[]) => Promise<void>;
@@ -14,6 +14,7 @@ type TelegramRuntime = {
 };
 
 type TopicContext = CommandContext<Context>;
+const WATCHER_SOURCES_WITH_RAW_HTML = new Set(["giftwhalefeed-watcher", "craftalerts-watcher"]);
 
 function formatEventMessage(event: BotEvent): string {
   const headerByType: Record<BotEvent["type"], string> = {
@@ -26,7 +27,7 @@ function formatEventMessage(event: BotEvent): string {
     ([key, value]) => `${key}: ${value}`,
   );
 
-  if (event.type === "info" && event.source === "giftwhalefeed-watcher") {
+  if (event.type === "info" && WATCHER_SOURCES_WITH_RAW_HTML.has(event.source)) {
     return [event.message, ...metadataLines].join("\n");
   }
 
@@ -36,7 +37,7 @@ function formatEventMessage(event: BotEvent): string {
 
 function formatFilterHelpMessage(): string {
   return [
-    `Required channel: -c ${SALES_CHANNEL}.`,
+    `Required channel: -c ${SALES_CHANNEL} or -c ${CRAFTS_CHANNEL}.`,
     "Optional bot mention: @botusername (required in group chats).",
     "Optional filter: -f field:value,other_field:value",
     "Match is case-insensitive and uses substring search.",
@@ -45,11 +46,24 @@ function formatFilterHelpMessage(): string {
   ].join("\n");
 }
 
-function formatStartConfirmationMessage(giftFilterConfig: string): string {
+function formatChannelLabel(channel: string): string {
+  if (channel === SALES_CHANNEL) {
+    return "sales";
+  }
+
+  if (channel === CRAFTS_CHANNEL) {
+    return "crafts";
+  }
+
+  return channel;
+}
+
+function formatStartConfirmationMessage(channel: string, giftFilterConfig: string): string {
   const parsed = parseGiftFilterConfig(giftFilterConfig);
   if (!parsed.ok) {
     return [
       "Giftbot activated for this chat.",
+      `Channel: ${formatChannelLabel(channel)}`,
       `Saved filter: ${giftFilterConfig}`,
       "",
       formatFilterHelpMessage(),
@@ -62,6 +76,7 @@ function formatStartConfirmationMessage(giftFilterConfig: string): string {
 
   return [
     "Giftbot activated for this chat.",
+    `Channel: ${formatChannelLabel(channel)}`,
     `Saved filter: ${stringifyGiftFilterConfig(parsed.config)}`,
     "You will be notified when ANY condition below matches:",
     ...conditionLines,
@@ -115,7 +130,7 @@ function shouldSkipCommandWithoutMention(ctx: TopicContext): boolean {
 function createTelegramRuntime(
   config: AppConfig,
   activeChats: ActiveChatStore,
-  giftWhaleFeedSeen: Pick<GiftWhaleFeedSeenStore, "countSeenMessages">,
+  feedSeen: Pick<FeedSeenStore, "countSeenMessages">,
 ): TelegramRuntime {
   const bot = createTelegramBot(config.telegramBotToken);
 
@@ -146,11 +161,12 @@ function createTelegramRuntime(
     }
 
     if (parsedArgs.filter === null) {
-      await activeChats.markActive(chatId, topicId, null);
+      await activeChats.markActive(chatId, topicId, null, parsedArgs.channel ?? SALES_CHANNEL);
       await ctx.reply(
         [
           "Giftbot activated for this chat.",
-          "Filter is cleared. You will receive all gift notifications.",
+          `Channel: ${formatChannelLabel(parsedArgs.channel ?? SALES_CHANNEL)}`,
+          "Filter is cleared. You will receive all matching gift notifications.",
           "",
           formatFilterHelpMessage(),
         ].join("\n"),
@@ -167,8 +183,15 @@ function createTelegramRuntime(
     }
 
     const normalizedConfig = stringifyGiftFilterConfig(parsed.config);
-    await activeChats.markActive(chatId, topicId, normalizedConfig);
-    await ctx.reply(formatStartConfirmationMessage(normalizedConfig));
+    await activeChats.markActive(
+      chatId,
+      topicId,
+      normalizedConfig,
+      parsedArgs.channel ?? SALES_CHANNEL,
+    );
+    await ctx.reply(
+      formatStartConfirmationMessage(parsedArgs.channel ?? SALES_CHANNEL, normalizedConfig),
+    );
   });
 
   bot.command("stop", async (ctx) => {
@@ -194,17 +217,20 @@ function createTelegramRuntime(
     const chatId = String(ctx.chat.id);
     const topicId = getTopicId(ctx) ?? null;
     const [activeChatList, seenMessageCount] = await Promise.all([
-      activeChats.listActiveChats(SALES_CHAT_TYPE),
-      giftWhaleFeedSeen.countSeenMessages(),
+      activeChats.listAllChats(),
+      feedSeen.countSeenMessages(),
     ]);
 
     const activeChat = activeChatList.find(
-      (chat) => chat.chatId === chatId && chat.topicId === topicId,
+      (chat) => chat.chatId === chatId && chat.topicId === topicId && chat.watchMode !== "",
     );
     const currentFilter = activeChat?.giftFilterConfig ?? null;
+    const currentMode = activeChat?.watchMode ?? null;
     const lines = [
       `I am alive. Since start I parsed ${seenMessageCount} messages`,
-      `Notifications ${activeChat ? "ACTIVE" : "INACTIVE"}`,
+      `Notifications ${
+        activeChat ? `ACTIVE (${formatChannelLabel(currentMode ?? SALES_CHAT_TYPE)})` : "INACTIVE"
+      }`,
       activeChat && `filter: ${currentFilter ?? "none"}`,
     ];
 

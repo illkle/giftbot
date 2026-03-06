@@ -34,6 +34,22 @@ describe("parseStartArgs", () => {
     });
   });
 
+  it("accepts the crafts channel", () => {
+    const parsed = parseStartArgs({
+      text: "/start -c crafts",
+      chatType: "private",
+      botUsername: "giftbot",
+    });
+
+    expect(parsed).toEqual({
+      mention: null,
+      channel: "crafts",
+      filter: null,
+      error: null,
+      skipForGroupChat: false,
+    });
+  });
+
   it("skips group chats when mention is missing", () => {
     const parsed = parseStartArgs({
       text: "/start -c sales -f backdrop:midnight blue",

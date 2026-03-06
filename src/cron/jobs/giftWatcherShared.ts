@@ -1,11 +1,13 @@
 import { load } from "cheerio";
 import type { AnyNode } from "domhandler";
 import type { ActiveChat } from "../../db/activeChats";
+import type { BotEvent } from "../../events/types";
 import {
   getMatchingGiftFilterConditions,
   parseGiftFilterConfig,
 } from "../../filters/giftFilterConfig";
 import type { GiftFilterConfig, GiftTableData } from "../../filters/giftFilterConfig";
+import type { CronJobDefinition, CronContext } from "../types";
 
 const NFT_HOST = "t.me";
 const TELEGRAM_BASE_URL = "https://t.me";
@@ -29,6 +31,22 @@ type ParsedGiftFilterState = {
   chatsWithoutFilter: number;
   chatsWithValidFilter: number;
   chatsWithInvalidFilter: number;
+};
+
+type FeedMessagePredicate = (messageText: string) => boolean;
+
+type ParseFeedMessageLinksOptions = {
+  includeMessage?: FeedMessagePredicate;
+};
+
+type CreateGiftFeedWatcherJobOptions = {
+  name: string;
+  feedUrl: string;
+  initialSyncStateKey: string;
+  schedule: string;
+  watchMode: string;
+  seenFeedSource?: string;
+  includeMessage?: FeedMessagePredicate;
 };
 
 function normalizeWhitespace(value: string): string {
@@ -170,7 +188,11 @@ function buildNotificationMessageHtml(
   return normalized;
 }
 
-function parseFeedMessageLinks(html: string): FeedMessageLink[] {
+function parseFeedMessageLinks(
+  html: string,
+  options: ParseFeedMessageLinksOptions = {},
+): FeedMessageLink[] {
+  const { includeMessage } = options;
   const $ = load(html);
   const uniqueKeys = new Set<string>();
   const results: FeedMessageLink[] = [];
@@ -179,6 +201,13 @@ function parseFeedMessageLinks(html: string): FeedMessageLink[] {
     const messageElement = $(element);
     const messageTime = messageElement.find("time[datetime]").first().attr("datetime");
     if (!messageTime) {
+      return;
+    }
+
+    const messageText = normalizeWhitespace(
+      messageElement.find(MESSAGE_TEXT_SELECTOR).first().text(),
+    );
+    if (includeMessage && !includeMessage(messageText)) {
       return;
     }
 
@@ -338,8 +367,180 @@ async function fetchTelegramPageHtml(url: string): Promise<string> {
   return response.text();
 }
 
+function createGiftFeedWatcherJob(options: CreateGiftFeedWatcherJobOptions): CronJobDefinition {
+  const {
+    name,
+    feedUrl,
+    initialSyncStateKey,
+    schedule,
+    watchMode,
+    seenFeedSource = name,
+    includeMessage,
+  } = options;
+
+  return {
+    name,
+    schedule,
+    async run(ctx: CronContext): Promise<BotEvent[]> {
+      const { logger, activeChats, feedSeen, state } = ctx;
+      const events: BotEvent[] = [];
+      const runStartedAt = Date.now();
+      const runId = new Date(runStartedAt).toISOString();
+      const timezone = process.env.CRON_TIMEZONE ?? "UTC";
+
+      try {
+        logger.info(
+          `[${name}] run ${runId} fetching feed: ${feedUrl} (display_timezone=${timezone})`,
+        );
+        const feedHtml = await fetchTelegramPageHtml(feedUrl);
+        const messageLinks = parseFeedMessageLinks(feedHtml, { includeMessage });
+        logger.info(
+          `[${name}] run ${runId} extracted ${messageLinks.length} message link(s) from feed`,
+        );
+
+        if (messageLinks.length === 0) {
+          logger.info(`[${name}] run ${runId} no NFT links found in feed`);
+          return events;
+        }
+
+        const initialSyncComplete = await state.getJson<boolean>(initialSyncStateKey);
+        logger.info(
+          `[${name}] run ${runId} initialSyncComplete=${String(Boolean(initialSyncComplete))}`,
+        );
+
+        if (!initialSyncComplete) {
+          logger.info(
+            `[${name}] run ${runId} performing initial sync for ${messageLinks.length} item(s)`,
+          );
+          for (const messageLink of messageLinks) {
+            await feedSeen.markSeenIfNew({
+              source: seenFeedSource,
+              messageTime: messageLink.messageTime,
+              nftLink: messageLink.nftLink,
+            });
+          }
+
+          await state.setJson(initialSyncStateKey, true);
+          logger.info(
+            `[${name}] run ${runId} initial sync completed, marked ${messageLinks.length} item(s) as seen`,
+          );
+          return events;
+        }
+
+        const unseenLinks: FeedMessageLink[] = [];
+        for (const messageLink of messageLinks) {
+          const isNew = await feedSeen.markSeenIfNew({
+            source: seenFeedSource,
+            messageTime: messageLink.messageTime,
+            nftLink: messageLink.nftLink,
+          });
+          if (isNew) {
+            unseenLinks.push(messageLink);
+          }
+        }
+        logger.info(
+          `[${name}] run ${runId} detected ${unseenLinks.length} unseen item(s) out of ${messageLinks.length}`,
+        );
+
+        if (unseenLinks.length === 0) {
+          logger.info(`[${name}] run ${runId} no new messages`);
+          return events;
+        }
+
+        const chats = await activeChats.listActiveChats(watchMode);
+        logger.info(`[${name}] run ${runId} loaded ${chats.length} active chat(s)`);
+        if (chats.length === 0) {
+          logger.info(`[${name}] run ${runId} no active chats to notify`);
+          return events;
+        }
+
+        const {
+          parsedFilterByChatRoute,
+          chatsWithoutFilter,
+          chatsWithValidFilter,
+          chatsWithInvalidFilter,
+        } = buildParsedGiftFilterState(chats, logger, name, runId);
+        logger.info(
+          `[${name}] run ${runId} chat filter summary: no_filter=${chatsWithoutFilter}, valid_filter=${chatsWithValidFilter}, invalid_filter=${chatsWithInvalidFilter}`,
+        );
+
+        for (const [index, unseen] of unseenLinks.entries()) {
+          try {
+            logger.info(
+              `[${name}] run ${runId} processing unseen ${index + 1}/${unseenLinks.length}: ${unseen.nftLink}`,
+            );
+            const nftHtml = await fetchTelegramPageHtml(unseen.nftLink);
+            const giftTable = parseGiftTable(nftHtml);
+            logger.info(
+              `[${name}] run ${runId} parsed ${Object.keys(giftTable).length} gift field(s) for ${unseen.nftLink}`,
+            );
+
+            const payload: GiftNotificationPayload = {
+              notificationMessageHtml: unseen.notificationMessageHtml,
+              giftTable,
+            };
+
+            let notifiedCount = 0;
+            let skippedByFilterCount = 0;
+            let skippedInvalidFilterCount = 0;
+
+            for (const chat of chats) {
+              const filterConfig = parsedFilterByChatRoute.get(getChatRouteKey(chat));
+              if (filterConfig === "invalid") {
+                skippedInvalidFilterCount += 1;
+                continue;
+              }
+
+              let matchedFilterDescription: string | undefined;
+              if (filterConfig) {
+                matchedFilterDescription = getMatchedGiftFilterDescription(filterConfig, giftTable);
+                if (!matchedFilterDescription) {
+                  skippedByFilterCount += 1;
+                  continue;
+                }
+              }
+
+              const message = formatNotificationMessage(payload, matchedFilterDescription);
+
+              events.push({
+                type: "info",
+                source: name,
+                chatId: chat.chatId,
+                topicId: chat.topicId ?? undefined,
+                message,
+                html: true,
+              });
+              notifiedCount += 1;
+            }
+            logger.info(
+              `[${name}] run ${runId} notification routing for ${unseen.nftLink}: notified=${notifiedCount}, skipped_by_filter=${skippedByFilterCount}, skipped_invalid_filter=${skippedInvalidFilterCount}`,
+            );
+          } catch (error) {
+            logger.error(`[${name}] run ${runId} failed to process ${unseen.nftLink}`, error);
+          }
+        }
+
+        logger.info(
+          `[${name}] run ${runId} processed ${unseenLinks.length} new item(s), queued ${events.length} notification(s), duration_ms=${Date.now() - runStartedAt}`,
+        );
+        return events;
+      } catch (error) {
+        logger.error(`[${name}] run ${runId} failed after ${Date.now() - runStartedAt}ms`, error);
+        return [
+          {
+            type: "external_api_error",
+            source: name,
+            message: `Failed to process feed: ${String(error)}`,
+          },
+        ];
+      }
+    },
+  };
+}
+
 export {
   buildParsedGiftFilterState,
+  createGiftFeedWatcherJob,
   fetchTelegramPageHtml,
   formatChatRoute,
   formatNotificationMessage,

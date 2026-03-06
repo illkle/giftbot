@@ -59,7 +59,7 @@ describe("createCronRunner", () => {
       context: {
         state: {} as any,
         activeChats: {} as any,
-        giftWhaleFeedSeen: {} as any,
+        feedSeen: {} as any,
       },
     });
 
@@ -86,7 +86,7 @@ describe("createCronRunner", () => {
       context: {
         state: {} as any,
         activeChats: {} as any,
-        giftWhaleFeedSeen: {} as any,
+        feedSeen: {} as any,
       },
     });
 
@@ -117,7 +117,7 @@ describe("createCronRunner", () => {
       context: {
         state: {} as any,
         activeChats: {} as any,
-        giftWhaleFeedSeen: {} as any,
+        feedSeen: {} as any,
       },
     });
 
@@ -150,7 +150,7 @@ describe("createCronRunner", () => {
       context: {
         state: {} as any,
         activeChats: {} as any,
-        giftWhaleFeedSeen: {} as any,
+        feedSeen: {} as any,
       },
     });
 

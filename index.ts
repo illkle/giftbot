@@ -6,7 +6,7 @@ import { createDatabase } from "./src/db/client";
 import { createCronStateStore } from "./src/db/cronStateStore";
 import { applyMigrations } from "./src/db/migrate";
 import { createActiveChatStore } from "./src/db/activeChats";
-import { createGiftWhaleFeedSeenStore } from "./src/db/giftWhaleFeedSeen";
+import { createFeedSeenStore } from "./src/db/feedSeen";
 
 const config = getConfig();
 const { db, resolvedPath } = createDatabase(config.databasePath);
@@ -15,8 +15,8 @@ console.info(`[db] ready at ${resolvedPath}`);
 
 const cronStateStore = createCronStateStore(db);
 const activeChats = createActiveChatStore(db);
-const giftWhaleFeedSeen = createGiftWhaleFeedSeenStore(db);
-const telegramRuntime = createTelegramRuntime(config, activeChats, giftWhaleFeedSeen);
+const feedSeen = createFeedSeenStore(db);
+const telegramRuntime = createTelegramRuntime(config, activeChats, feedSeen);
 
 const cronRunner = createCronRunner({
   jobs,
@@ -24,7 +24,7 @@ const cronRunner = createCronRunner({
   context: {
     state: cronStateStore,
     activeChats,
-    giftWhaleFeedSeen,
+    feedSeen,
   },
   onEvents: async (events) => {
     await telegramRuntime.process(events);
