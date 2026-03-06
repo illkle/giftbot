@@ -8,6 +8,7 @@ import {
 } from "../../filters/giftFilterConfig";
 import type { GiftFilterConfig, GiftTableData } from "../../filters/giftFilterConfig";
 import type { CronJobDefinition, CronContext } from "../types";
+import { getGiftInfo } from "../../utils";
 
 const NFT_HOST = "t.me";
 const TELEGRAM_BASE_URL = "https://t.me";
@@ -22,6 +23,7 @@ type FeedMessageLink = {
 type GiftNotificationPayload = {
   notificationMessageHtml: string;
   giftTable: GiftTableData;
+  additionalInfo?: string[];
 };
 
 type ParsedGiftFilterMap = Map<string, GiftFilterConfig | null | "invalid">;
@@ -34,6 +36,7 @@ type ParsedGiftFilterState = {
 };
 
 type FeedMessagePredicate = (messageText: string) => boolean;
+type AdditionalGiftInfoFetcher = (slug: string) => Promise<string[]>;
 
 type ParseFeedMessageLinksOptions = {
   includeMessage?: FeedMessagePredicate;
@@ -47,6 +50,7 @@ type CreateGiftFeedWatcherJobOptions = {
   watchMode: string;
   seenFeedSource?: string;
   includeMessage?: FeedMessagePredicate;
+  getAdditionalGiftInfo?: AdditionalGiftInfoFetcher;
 };
 
 function normalizeWhitespace(value: string): string {
@@ -276,15 +280,18 @@ function formatNotificationMessage(
   payload: GiftNotificationPayload,
   matchedFilterDescription?: string,
 ): string {
-  if (!matchedFilterDescription) {
-    return payload.notificationMessageHtml;
+  const messageParts = [payload.notificationMessageHtml];
+  const additionalInfo = payload.additionalInfo;
+
+  if (additionalInfo && additionalInfo.length > 0) {
+    messageParts.push(...additionalInfo);
   }
 
-  return [
-    payload.notificationMessageHtml,
-    "",
-    formatMatchedFilterHashtag(matchedFilterDescription),
-  ].join("\n");
+  if (matchedFilterDescription) {
+    messageParts.push("", formatMatchedFilterHashtag(matchedFilterDescription));
+  }
+
+  return messageParts.join("\n");
 }
 
 function getChatRouteKey(chat: Pick<ActiveChat, "chatId" | "topicId">): string {
@@ -367,6 +374,51 @@ async function fetchTelegramPageHtml(url: string): Promise<string> {
   return response.text();
 }
 
+const round2 = (num: number) => Math.round(num * 100) / 100;
+
+async function getAdditionalGiftInfo(telegamUrl: string): Promise<string[]> {
+  const spl = telegamUrl.split("/");
+  const slug = spl[spl.length - 1];
+
+  if (!slug) {
+    throw new Error(`error, no slug from ${telegamUrl}`);
+  }
+
+  let res = `<a href="https://xgift.tg/gift-details/${slug}">xGift</a>`;
+
+  try {
+    const data = await getGiftInfo(slug);
+
+    res += ` | Estimated: ${round2(data.estimatedPriceTon)}`;
+
+    if (data.saleData?.salePriceTon !== undefined) {
+      res += ` Market: ${round2(data.saleData.salePriceTon)}`;
+    }
+  } catch (e) {
+    console.error(e);
+  }
+
+  return ["", res];
+}
+
+async function getCachedAdditionalGiftInfo(
+  cache: Map<string, Promise<string[]>>,
+  slug: string,
+  fetchAdditionalGiftInfo: AdditionalGiftInfoFetcher,
+): Promise<string[]> {
+  const existing = cache.get(slug);
+  if (existing) {
+    return existing;
+  }
+
+  const pending = fetchAdditionalGiftInfo(slug).catch((error) => {
+    console.error(`[giftWatcherShared] failed to load additional gift info for ${slug}`, error);
+    return [];
+  });
+  cache.set(slug, pending);
+  return pending;
+}
+
 function createGiftFeedWatcherJob(options: CreateGiftFeedWatcherJobOptions): CronJobDefinition {
   const {
     name,
@@ -376,6 +428,7 @@ function createGiftFeedWatcherJob(options: CreateGiftFeedWatcherJobOptions): Cro
     watchMode,
     seenFeedSource = name,
     includeMessage,
+    getAdditionalGiftInfo: fetchAdditionalGiftInfo = getAdditionalGiftInfo,
   } = options;
 
   return {
@@ -387,6 +440,7 @@ function createGiftFeedWatcherJob(options: CreateGiftFeedWatcherJobOptions): Cro
       const runStartedAt = Date.now();
       const runId = new Date(runStartedAt).toISOString();
       const timezone = process.env.CRON_TIMEZONE ?? "UTC";
+      const additionalInfoBySlug = new Map<string, Promise<string[]>>();
 
       try {
         logger.info(
@@ -480,6 +534,10 @@ function createGiftFeedWatcherJob(options: CreateGiftFeedWatcherJobOptions): Cro
               giftTable,
             };
 
+            const recipients: Array<{
+              chat: ActiveChat;
+              matchedFilterDescription?: string;
+            }> = [];
             let notifiedCount = 0;
             let skippedByFilterCount = 0;
             let skippedInvalidFilterCount = 0;
@@ -500,13 +558,31 @@ function createGiftFeedWatcherJob(options: CreateGiftFeedWatcherJobOptions): Cro
                 }
               }
 
-              const message = formatNotificationMessage(payload, matchedFilterDescription);
+              recipients.push({ chat, matchedFilterDescription });
+            }
+
+            if (recipients.length > 0) {
+              const additionalInfo = await getCachedAdditionalGiftInfo(
+                additionalInfoBySlug,
+                unseen.nftLink,
+                fetchAdditionalGiftInfo,
+              );
+              if (additionalInfo.length > 0) {
+                payload.additionalInfo = additionalInfo;
+              }
+            }
+
+            for (const recipient of recipients) {
+              const message = formatNotificationMessage(
+                payload,
+                recipient.matchedFilterDescription,
+              );
 
               events.push({
                 type: "info",
                 source: name,
-                chatId: chat.chatId,
-                topicId: chat.topicId ?? undefined,
+                chatId: recipient.chat.chatId,
+                topicId: recipient.chat.topicId ?? undefined,
                 message,
                 html: true,
               });
@@ -544,9 +620,16 @@ export {
   fetchTelegramPageHtml,
   formatChatRoute,
   formatNotificationMessage,
+  getAdditionalGiftInfo,
   getChatRouteKey,
+  getCachedAdditionalGiftInfo,
   getMatchedGiftFilterDescription,
   parseFeedMessageLinks,
   parseGiftTable,
 };
-export type { FeedMessageLink, GiftNotificationPayload, ParsedGiftFilterState };
+export type {
+  AdditionalGiftInfoFetcher,
+  FeedMessageLink,
+  GiftNotificationPayload,
+  ParsedGiftFilterState,
+};

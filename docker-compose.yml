@@ -1,6 +1,7 @@
 services:
   giftbot:
     build: .
+    platform: linux/amd64
     env_file:
       - .env
     environment:

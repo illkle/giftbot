@@ -1,8 +1,16 @@
 import { readFileSync } from "node:fs";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActiveChatStore } from "../../db/activeChats";
 import type { CronStateStore } from "../../db/cronStateStore";
 import type { FeedSeenStore } from "../../db/feedSeen";
+const { getGiftInfoMock } = vi.hoisted(() => ({
+  getGiftInfoMock: vi.fn(),
+}));
+
+vi.mock("../../utils", () => ({
+  getGiftInfo: getGiftInfoMock,
+}));
+
 import { giftWhaleFeedWatcherJob } from "./giftWhaleFeedWatcher";
 
 function htmlResponse(html: string, status = 200): Response {
@@ -63,9 +71,14 @@ function createContext(options: {
 }
 
 describe("giftWhaleFeedWatcherJob", () => {
+  beforeEach(() => {
+    getGiftInfoMock.mockResolvedValue({ estimatedPriceTon: 12.34 });
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    getGiftInfoMock.mockReset();
     delete process.env.CRON_TIMEZONE;
   });
 
@@ -454,6 +467,8 @@ describe("giftWhaleFeedWatcherJob", () => {
         "├ Model: Toy Joy",
         "├ Price: 1738.99 TON (~$2254.25)",
         '└ Sold on <a href="https://t.me/mrkt/app?startapp=363826839">MRKT</a>',
+        "",
+        '<a href="https://xgift.tg/gift-details/HeartLocket-450">xGift</a> | Estimated: 12.34',
       ].join("\n"),
     );
 
@@ -463,5 +478,8 @@ describe("giftWhaleFeedWatcherJob", () => {
     );
     expect(portalsMessage).toContain("└ Sold on Portals");
     expect(portalsMessage).not.toContain("https://t.me/portals/market");
+    expect(portalsMessage).toContain(
+      '<a href="https://xgift.tg/gift-details/HeartLocket-1522">xGift</a> | Estimated: 12.34',
+    );
   });
 });

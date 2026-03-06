@@ -1,7 +1,15 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActiveChatStore } from "../../db/activeChats";
 import type { CronStateStore } from "../../db/cronStateStore";
 import type { FeedSeenStore } from "../../db/feedSeen";
+const { getGiftInfoMock } = vi.hoisted(() => ({
+  getGiftInfoMock: vi.fn(),
+}));
+
+vi.mock("../../utils", () => ({
+  getGiftInfo: getGiftInfoMock,
+}));
+
 import { craftAlertsWatcherJob } from "./craftAlertsWatcher";
 
 function htmlResponse(html: string, status = 200): Response {
@@ -64,9 +72,14 @@ function createContext(options: {
 }
 
 describe("craftAlertsWatcherJob", () => {
+  beforeEach(() => {
+    getGiftInfoMock.mockResolvedValue({ estimatedPriceTon: 12.34 });
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    getGiftInfoMock.mockReset();
     delete process.env.CRON_TIMEZONE;
   });
 
