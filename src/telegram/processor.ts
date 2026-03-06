@@ -16,6 +16,9 @@ type TopicContext = {
   };
 };
 
+const SALES_START_FLAG = "-sales";
+const SALES_START_FLAG_PATTERN = /(^|\s)-sales(?=\s|$)/;
+
 function formatEventMessage(event: BotEvent): string {
   const headerByType: Record<BotEvent["type"], string> = {
     external_api_change: "API change detected",
@@ -37,10 +40,11 @@ function formatEventMessage(event: BotEvent): string {
 
 function formatFilterHelpMessage(): string {
   return [
+    `Activation requires ${SALES_START_FLAG}.`,
     "Filter format: field:value,other_field:value",
     "Match is case-insensitive and uses substring search.",
     "Comma-separated conditions are OR.",
-    "Example: /start backdrop:lemongrass,backdrop:orange,symbol:shield",
+    `Example: /start ${SALES_START_FLAG} backdrop:lemongrass,backdrop:orange,symbol:shield`,
   ].join("\n");
 }
 
@@ -78,6 +82,14 @@ function getTopicId(ctx: TopicContext): number | undefined {
   return topicId;
 }
 
+function extractSalesStartConfig(rawInput: string): string | null {
+  if (!SALES_START_FLAG_PATTERN.test(rawInput)) {
+    return null;
+  }
+
+  return rawInput.replace(SALES_START_FLAG_PATTERN, " ").trim();
+}
+
 function createTelegramRuntime(
   config: AppConfig,
   activeChats: ActiveChatStore,
@@ -89,10 +101,16 @@ function createTelegramRuntime(
     const chatId = String(ctx.chat.id);
     const topicId = getTopicId(ctx);
     const rawConfigInput = typeof ctx.match === "string" ? ctx.match.trim() : "";
+    const salesConfigInput = extractSalesStartConfig(rawConfigInput);
 
-    console.log("RECEIVE START COMMAND", chatId, topicId, new Date(ctx.msg.date));
+    console.log("RECEIVE START COMMAND", chatId, topicId, ctx.msg?.date);
 
-    if (rawConfigInput.length === 0) {
+    if (salesConfigInput === null) {
+      await ctx.reply(`Ignored. Use /start ${SALES_START_FLAG} to activate Giftbot for this chat.`);
+      return;
+    }
+
+    if (salesConfigInput.length === 0) {
       await activeChats.markActive(chatId, topicId, null);
       await ctx.reply(
         [
@@ -105,7 +123,7 @@ function createTelegramRuntime(
       return;
     }
 
-    const parsed = parseGiftFilterConfig(rawConfigInput);
+    const parsed = parseGiftFilterConfig(salesConfigInput);
     if (!parsed.ok) {
       await ctx.reply(
         [`Could not save filter: ${parsed.error}`, "", formatFilterHelpMessage()].join("\n"),

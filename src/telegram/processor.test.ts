@@ -80,7 +80,7 @@ describe("createTelegramRuntime", () => {
     vi.clearAllMocks();
   });
 
-  it("clears filter when /start is sent without args", async () => {
+  it("ignores /start when -sales is missing", async () => {
     const fakeBot = createFakeBot();
     createTelegramBotMock.mockReturnValue(fakeBot);
 
@@ -95,14 +95,17 @@ describe("createTelegramRuntime", () => {
     await fakeBot.commandHandlers.start!({
       chat: { id: 42 },
       match: "   ",
+      msg: { date: 0 },
       reply,
     });
 
-    expect(activeChats.markActive).toHaveBeenCalledWith("42", undefined, null);
-    expect(reply).toHaveBeenCalledWith(expect.stringContaining("Filter is cleared."));
+    expect(activeChats.markActive).not.toHaveBeenCalled();
+    expect(reply).toHaveBeenCalledWith(
+      expect.stringContaining("Use /start -sales to activate Giftbot"),
+    );
   });
 
-  it("stores topic id when /start is sent in a topic", async () => {
+  it("stores topic id when /start -sales is sent in a topic", async () => {
     const fakeBot = createFakeBot();
     createTelegramBotMock.mockReturnValue(fakeBot);
 
@@ -117,7 +120,7 @@ describe("createTelegramRuntime", () => {
     await fakeBot.commandHandlers.start!({
       chat: { id: 42 },
       msg: { message_thread_id: 999 },
-      match: "   ",
+      match: "-sales",
       reply,
     });
 
@@ -138,7 +141,8 @@ describe("createTelegramRuntime", () => {
     });
     await fakeBot.commandHandlers.start!({
       chat: { id: 55 },
-      match: "backdrop:lemongrass|orange",
+      match: "-sales backdrop:lemongrass|orange",
+      msg: { date: 0 },
       reply,
     });
 
@@ -161,7 +165,8 @@ describe("createTelegramRuntime", () => {
     });
     await fakeBot.commandHandlers.start!({
       chat: { id: 99 },
-      match: " Backdrop: LemonGrass , symbol: Shield ",
+      match: "-sales Backdrop: LemonGrass , symbol: Shield ",
+      msg: { date: 0 },
       reply,
     });
 
@@ -322,8 +327,8 @@ describe("createTelegramRuntime", () => {
       reply,
     });
 
-    expect(reply).toHaveBeenCalledWith(expect.stringContaining("alive: yes"));
-    expect(reply).toHaveBeenCalledWith(expect.stringContaining("giftwhale_feed_seen: 1234"));
+    expect(reply).toHaveBeenCalledWith(expect.stringContaining("I am alive."));
+    expect(reply).toHaveBeenCalledWith(expect.stringContaining("I parsed 1234 messages"));
     expect(reply).toHaveBeenCalledWith(
       expect.stringContaining("filter: backdrop:lemongrass,symbol:shield"),
     );
@@ -350,10 +355,7 @@ describe("createTelegramRuntime", () => {
       reply,
     });
 
-    expect(reply).toHaveBeenCalledWith(expect.stringContaining("giftwhale_feed_seen: 5"));
-    expect(reply).toHaveBeenCalledWith(expect.stringContaining("filter: none"));
-    expect(reply).toHaveBeenCalledWith(
-      expect.stringContaining("warning: this chat is not active. use /start to activate."),
-    );
+    expect(reply).toHaveBeenCalledWith(expect.stringContaining("Since start I parsed 5 messages"));
+    expect(reply).toHaveBeenCalledWith(expect.stringContaining("Notifications INACTIVE"));
   });
 });

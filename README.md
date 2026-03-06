@@ -4,7 +4,7 @@ Telegram bot with a pluggable cron watcher layer:
 
 1. Cron jobs run on a schedule and return `BotEvent[]`.
 2. Cron jobs can persist/read state via a shared Drizzle SQLite store (`ctx.state`).
-3. Active chats are tracked in SQLite (`/start` activates, `/stop` deactivates), including per-chat gift filters.
+3. Active chats are tracked in SQLite (`/start -sales` activates, `/stop` deactivates), including per-chat gift filters.
 4. The feed watcher stores processed `(message_time, nft_link)` pairs to avoid reprocessing.
 5. Events are forwarded to the Telegram processor.
 6. Telegram processor formats events and sends messages via Telegram API.
@@ -56,8 +56,8 @@ On first run, it performs an initial sync (marks current feed entries as seen) a
 
 How to test:
 
-1. Open your bot chat in Telegram and send `/start`.
-2. (Optional) set/update a filter with `/start backdrop:lemongrass,backdrop:orange,symbol:shield`.
+1. Open your bot chat in Telegram and send `/start -sales`.
+2. (Optional) set/update a filter with `/start -sales backdrop:lemongrass,backdrop:orange,symbol:shield`.
 3. Filter semantics:
    - each condition is `field:value`.
    - comma-separated conditions are OR-ed.
@@ -82,20 +82,22 @@ Commit the generated files in `drizzle/`. They will be applied automatically on 
 2. Export a `CronJobDefinition`:
 
 ```ts
-import type { CronJobDefinition } from "../types";
+import type { CronJobDefinition } from '../types';
 
 export const myWatcherJob: CronJobDefinition = {
-  name: "my-watcher",
-  schedule: "*/5 * * * *",
+  name: 'my-watcher',
+  schedule: '*/5 * * * *',
   async run(ctx) {
-    const lastSeen = await ctx.state.getJson<{ value: string }>("my-watcher:last-seen");
-    await ctx.state.setJson("my-watcher:last-seen", { value: "new-value" });
+    const lastSeen = await ctx.state.getJson<{ value: string }>(
+      'my-watcher:last-seen',
+    );
+    await ctx.state.setJson('my-watcher:last-seen', { value: 'new-value' });
 
     return [
       {
-        type: "info",
-        source: "my-source",
-        message: "Something changed",
+        type: 'info',
+        source: 'my-source',
+        message: 'Something changed',
       },
     ];
   },
