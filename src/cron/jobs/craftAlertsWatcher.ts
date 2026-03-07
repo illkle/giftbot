@@ -8,7 +8,7 @@ export const craftAlertsWatcherJob = createGiftFeedWatcherJob({
   name: "craftalerts-watcher",
   feedUrl: FEED_URL,
   initialSyncStateKey: INITIAL_SYNC_STATE_KEY,
-  schedule: "*/3 * * * *",
+  schedule: "*/1 * * * *",
   watchMode: CRAFTS_CHAT_TYPE,
   seenFeedSource: "crafts",
   includeMessage(messageText) {
