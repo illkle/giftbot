@@ -18,6 +18,7 @@ import {
   createGiftFeedWatcherJob,
   formatNotificationMessage,
   getAdditionalGiftInfo,
+  parseFeedMessageLinks,
 } from "./giftWatcherShared";
 
 const originalFetch: typeof globalThis.fetch = globalThis.fetch;
@@ -71,6 +72,7 @@ function createContext(options: {
 
   return {
     logger,
+    telegramBaseUrl: "https://t.me",
     state,
     activeChats,
     feedSeen,
@@ -101,7 +103,7 @@ function mockFetch(
 function createTestJob(getAdditionalGiftInfo?: AdditionalGiftInfoFetcher) {
   return createGiftFeedWatcherJob({
     name: "giftwatcher-shared-test",
-    feedUrl: "https://t.me/s/testfeed",
+    feedPath: "/s/testfeed",
     initialSyncStateKey: "giftwatcher-shared-test:initial-sync-complete",
     schedule: "* * * * *",
     watchMode: "sales",
@@ -155,6 +157,69 @@ describe("giftWatcherShared", () => {
       '<a href="https://xgift.tg/gift-details/FAILED">xGift</a>',
     ]);
     expect(consoleError).toHaveBeenCalledWith(error);
+  });
+
+  it("accepts NFT links from both Telegram web domains", () => {
+    const html = `
+      <div class="tgme_widget_message_wrap">
+        <time datetime="2026-07-14T10:00:00Z"></time>
+        <div class="tgme_widget_message_text js-message_text">
+          <a href="https://t.me/nft/HeartLocket-346">t.me</a>
+          <a href="https://telegram.me/nft/HeartLocket-346">telegram.me</a>
+        </div>
+      </div>
+    `;
+
+    expect(parseFeedMessageLinks(html)).toEqual([
+      expect.objectContaining({
+        messageTime: "2026-07-14T10:00:00Z",
+        nftLink: "https://t.me/nft/HeartLocket-346",
+      }),
+    ]);
+  });
+
+  it("fetches and renders with the configured Telegram base URL", async () => {
+    const getAdditionalInfo = vi.fn(async () => []);
+    const job = createTestJob(getAdditionalInfo);
+    const ctx = createContext({
+      chats: [{ chatId: "101", topicId: null, giftFilterConfig: null }],
+    });
+    ctx.telegramBaseUrl = "https://telegram.me";
+    const feedHtml = `
+      <div class="tgme_widget_message_wrap">
+        <time datetime="2026-07-14T10:00:00Z"></time>
+        <div class="tgme_widget_message_text js-message_text">
+          🏷 <a href="https://t.me/nft/HeartLocket-346">Heart Locket #346</a><br/>
+          └ Sold on <a href="https://t.me/mrkt/app?startapp=123">MRKT</a>
+        </div>
+      </div>
+    `;
+
+    const fetchMock = mockFetch(async (url) => {
+      if (url === "https://telegram.me/s/testfeed") {
+        return htmlResponse(feedHtml);
+      }
+      if (url === "https://telegram.me/nft/HeartLocket-346") {
+        return htmlResponse('<table class="tgme_gift_table"></table>');
+      }
+      throw new Error(`Unexpected URL in test: ${url}`);
+    });
+
+    const events = await job.run(ctx);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(ctx.feedSeen.markSeenIfNew).toHaveBeenCalledWith({
+      source: "giftwatcher-shared-test",
+      messageTime: "2026-07-14T10:00:00Z",
+      nftLink: "https://t.me/nft/HeartLocket-346",
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0]?.message).toContain(
+      '<a href="https://telegram.me/nft/HeartLocket-346">Heart Locket #346</a>',
+    );
+    expect(events[0]?.message).toContain(
+      '<a href="https://telegram.me/mrkt/app?startapp=123">MRKT</a>',
+    );
   });
 
   it("loads additional info once per gift and reuses it across recipients", async () => {

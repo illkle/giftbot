@@ -5,6 +5,7 @@ import type { FeedSeenStore } from "../db/feedSeen";
 
 type CronContext = {
   logger: Pick<Console, "info" | "warn" | "error">;
+  telegramBaseUrl: string;
   state: CronStateStore;
   activeChats: ActiveChatStore;
   feedSeen: FeedSeenStore;

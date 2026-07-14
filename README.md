@@ -29,6 +29,7 @@ Recommended:
 
 - `TELEGRAM_CHAT_ID` (default destination chat)
 - `TELEGRAM_ADMIN_CHAT_ID` (chat allowed to use `/subs`, `/prune`, and `/kill <chat_id>`, and receives all bot error alerts)
+- `TELEGRAM_BASE_URL` (`https://t.me` by default; set to `https://telegram.me` to use the alternate Telegram web domain)
 - `CRON_TIMEZONE`
 - `RUN_JOBS_ON_STARTUP`
 - `DATABASE_PATH`
@@ -47,8 +48,8 @@ Default cron: `giftwhalefeed-watcher` (every minute).
 
 Flow:
 
-1. Fetches `https://t.me/s/giftwhalefeed`.
-2. Extracts message time + `https://t.me/nft/*` links.
+1. Fetches `/s/giftwhalefeed` from the configured `TELEGRAM_BASE_URL`.
+2. Extracts message time + NFT links from either `t.me` or `telegram.me` HTML.
 3. Skips pairs already seen (`same time + same link`).
 4. Fetches each unseen NFT page and parses `.tgme_gift_table`.
 5. Sends notifications to active chats whose saved filter matches (or all active chats when no filter is set).

@@ -9,9 +9,12 @@ import {
 import type { GiftFilterConfig, GiftTableData } from "../../filters/giftFilterConfig";
 import type { CronJobDefinition, CronContext } from "../types";
 import { getGiftInfo } from "../../utils";
+import {
+  DEFAULT_TELEGRAM_BASE_URL,
+  isSupportedTelegramHost,
+  rebaseTelegramUrl,
+} from "../../telegram/urls";
 
-const NFT_HOST = "t.me";
-const TELEGRAM_BASE_URL = "https://t.me";
 const MESSAGE_TEXT_SELECTOR = ".tgme_widget_message_text.js-message_text";
 
 type FeedMessageLink = {
@@ -40,11 +43,12 @@ type AdditionalGiftInfoFetcher = (slug: string) => Promise<string[]>;
 
 type ParseFeedMessageLinksOptions = {
   includeMessage?: FeedMessagePredicate;
+  telegramBaseUrl?: string;
 };
 
 type CreateGiftFeedWatcherJobOptions = {
   name: string;
-  feedUrl: string;
+  feedPath: string;
   initialSyncStateKey: string;
   schedule: string;
   watchMode: string;
@@ -57,25 +61,31 @@ function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
-function normalizeNftLink(value: string): string | undefined {
+function normalizeNftLink(
+  value: string,
+  telegramBaseUrl = DEFAULT_TELEGRAM_BASE_URL,
+): string | undefined {
   try {
-    const url = new URL(value, TELEGRAM_BASE_URL);
-    if (url.hostname !== NFT_HOST || !url.pathname.startsWith("/nft/")) {
+    const url = new URL(value, `${telegramBaseUrl}/`);
+    if (!isSupportedTelegramHost(url.hostname) || !url.pathname.startsWith("/nft/")) {
       return undefined;
     }
-    return `https://${NFT_HOST}${url.pathname}`;
+    return `${DEFAULT_TELEGRAM_BASE_URL}${url.pathname}`;
   } catch {
     return undefined;
   }
 }
 
-function normalizeMrktLink(value: string): string | undefined {
+function normalizeMrktLink(
+  value: string,
+  telegramBaseUrl = DEFAULT_TELEGRAM_BASE_URL,
+): string | undefined {
   try {
-    const url = new URL(value, TELEGRAM_BASE_URL);
-    if (url.hostname !== NFT_HOST || !url.pathname.startsWith("/mrkt/")) {
+    const url = new URL(value, `${telegramBaseUrl}/`);
+    if (!isSupportedTelegramHost(url.hostname) || !url.pathname.startsWith("/mrkt/")) {
       return undefined;
     }
-    return `https://${NFT_HOST}${url.pathname}${url.search}`;
+    return rebaseTelegramUrl(`${url.pathname}${url.search}`, telegramBaseUrl);
   } catch {
     return undefined;
   }
@@ -97,20 +107,30 @@ function normalizeTextNode(value: string): string {
   return value.replace(/\s+/g, " ");
 }
 
-function normalizeFeedLink(href: string, anchorText: string, nftLink: string): string | undefined {
-  const normalizedNftLink = normalizeNftLink(href);
+function normalizeFeedLink(
+  href: string,
+  anchorText: string,
+  nftLink: string,
+  telegramBaseUrl: string,
+): string | undefined {
+  const normalizedNftLink = normalizeNftLink(href, telegramBaseUrl);
   if (normalizedNftLink === nftLink) {
-    return normalizedNftLink;
+    return rebaseTelegramUrl(normalizedNftLink, telegramBaseUrl);
   }
 
   if (anchorText.toUpperCase() === "MRKT") {
-    return normalizeMrktLink(href);
+    return normalizeMrktLink(href, telegramBaseUrl);
   }
 
   return undefined;
 }
 
-function renderMessageNode(node: AnyNode, $: ReturnType<typeof load>, nftLink: string): string {
+function renderMessageNode(
+  node: AnyNode,
+  $: ReturnType<typeof load>,
+  nftLink: string,
+  telegramBaseUrl: string,
+): string {
   if (node.type === "text") {
     const normalizedText = normalizeTextNode(node.data);
     if (!normalizedText.trim()) {
@@ -140,7 +160,7 @@ function renderMessageNode(node: AnyNode, $: ReturnType<typeof load>, nftLink: s
       return escapeHtml(anchorText);
     }
 
-    const normalizedLink = normalizeFeedLink(href, anchorText, nftLink);
+    const normalizedLink = normalizeFeedLink(href, anchorText, nftLink, telegramBaseUrl);
     if (!normalizedLink) {
       return escapeHtml(anchorText);
     }
@@ -152,7 +172,9 @@ function renderMessageNode(node: AnyNode, $: ReturnType<typeof load>, nftLink: s
     return escapeHtml(normalizeWhitespace($(node).text()));
   }
 
-  return node.children.map((childNode) => renderMessageNode(childNode, $, nftLink)).join("");
+  return node.children
+    .map((childNode) => renderMessageNode(childNode, $, nftLink, telegramBaseUrl))
+    .join("");
 }
 
 function normalizeRenderedMessageHtml(value: string): string {
@@ -177,16 +199,21 @@ function buildNotificationMessageHtml(
   $: ReturnType<typeof load>,
   messageTextNodes: AnyNode[],
   nftLink: string,
+  telegramBaseUrl: string,
 ): string {
   if (messageTextNodes.length === 0) {
-    return `<a href="${escapeHtmlAttribute(nftLink)}">${escapeHtml(nftLink)}</a>`;
+    const displayLink = rebaseTelegramUrl(nftLink, telegramBaseUrl);
+    return `<a href="${escapeHtmlAttribute(displayLink)}">${escapeHtml(displayLink)}</a>`;
   }
 
-  const rendered = messageTextNodes.map((node) => renderMessageNode(node, $, nftLink)).join("");
+  const rendered = messageTextNodes
+    .map((node) => renderMessageNode(node, $, nftLink, telegramBaseUrl))
+    .join("");
   const normalized = normalizeRenderedMessageHtml(rendered);
 
   if (!normalized) {
-    return `<a href="${escapeHtmlAttribute(nftLink)}">${escapeHtml(nftLink)}</a>`;
+    const displayLink = rebaseTelegramUrl(nftLink, telegramBaseUrl);
+    return `<a href="${escapeHtmlAttribute(displayLink)}">${escapeHtml(displayLink)}</a>`;
   }
 
   return normalized;
@@ -196,7 +223,7 @@ function parseFeedMessageLinks(
   html: string,
   options: ParseFeedMessageLinksOptions = {},
 ): FeedMessageLink[] {
-  const { includeMessage } = options;
+  const { includeMessage, telegramBaseUrl = DEFAULT_TELEGRAM_BASE_URL } = options;
   const $ = load(html);
   const uniqueKeys = new Set<string>();
   const results: FeedMessageLink[] = [];
@@ -226,7 +253,7 @@ function parseFeedMessageLinks(
       if (!href) {
         return;
       }
-      const nftLink = normalizeNftLink(href);
+      const nftLink = normalizeNftLink(href, telegramBaseUrl);
       if (nftLink) {
         linksInMessage.add(nftLink);
       }
@@ -241,7 +268,12 @@ function parseFeedMessageLinks(
       results.push({
         messageTime,
         nftLink,
-        notificationMessageHtml: buildNotificationMessageHtml($, messageTextNodes, nftLink),
+        notificationMessageHtml: buildNotificationMessageHtml(
+          $,
+          messageTextNodes,
+          nftLink,
+          telegramBaseUrl,
+        ),
       });
     }
   });
@@ -422,7 +454,7 @@ async function getCachedAdditionalGiftInfo(
 function createGiftFeedWatcherJob(options: CreateGiftFeedWatcherJobOptions): CronJobDefinition {
   const {
     name,
-    feedUrl,
+    feedPath,
     initialSyncStateKey,
     schedule,
     watchMode,
@@ -435,7 +467,8 @@ function createGiftFeedWatcherJob(options: CreateGiftFeedWatcherJobOptions): Cro
     name,
     schedule,
     async run(ctx: CronContext): Promise<BotEvent[]> {
-      const { logger, activeChats, feedSeen, state } = ctx;
+      const { logger, telegramBaseUrl, activeChats, feedSeen, state } = ctx;
+      const feedUrl = rebaseTelegramUrl(feedPath, telegramBaseUrl);
       const events: BotEvent[] = [];
       const runStartedAt = Date.now();
       const runId = new Date(runStartedAt).toISOString();
@@ -447,7 +480,10 @@ function createGiftFeedWatcherJob(options: CreateGiftFeedWatcherJobOptions): Cro
           `[${name}] run ${runId} fetching feed: ${feedUrl} (display_timezone=${timezone})`,
         );
         const feedHtml = await fetchTelegramPageHtml(feedUrl);
-        const messageLinks = parseFeedMessageLinks(feedHtml, { includeMessage });
+        const messageLinks = parseFeedMessageLinks(feedHtml, {
+          includeMessage,
+          telegramBaseUrl,
+        });
         logger.info(
           `[${name}] run ${runId} extracted ${messageLinks.length} message link(s) from feed`,
         );
@@ -539,7 +575,8 @@ function createGiftFeedWatcherJob(options: CreateGiftFeedWatcherJobOptions): Cro
             logger.info(
               `[${name}] run ${runId} processing unseen ${index + 1}/${unseenLinks.length}: ${unseen.nftLink}`,
             );
-            const nftHtml = await fetchTelegramPageHtml(unseen.nftLink);
+            const nftFetchUrl = rebaseTelegramUrl(unseen.nftLink, telegramBaseUrl);
+            const nftHtml = await fetchTelegramPageHtml(nftFetchUrl);
             const giftTable = parseGiftTable(nftHtml);
             logger.info(
               `[${name}] run ${runId} parsed ${Object.keys(giftTable).length} gift field(s) for ${unseen.nftLink}`,

@@ -22,6 +22,7 @@ const cronRunner = createCronRunner({
   jobs,
   timezone: config.cronTimezone,
   context: {
+    telegramBaseUrl: config.telegramBaseUrl,
     state: cronStateStore,
     activeChats,
     feedSeen,

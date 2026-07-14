@@ -1,12 +1,12 @@
 import { CRAFTS_CHAT_TYPE } from "../../db/activeChats";
 import { createGiftFeedWatcherJob } from "./giftWatcherShared";
 
-const FEED_URL = "https://t.me/s/craftalerts";
+const FEED_PATH = "/s/craftalerts";
 const INITIAL_SYNC_STATE_KEY = "craftalerts-watcher:initial-sync-complete";
 
 export const craftAlertsWatcherJob = createGiftFeedWatcherJob({
   name: "craftalerts-watcher",
-  feedUrl: FEED_URL,
+  feedPath: FEED_PATH,
   initialSyncStateKey: INITIAL_SYNC_STATE_KEY,
   schedule: "*/1 * * * *",
   watchMode: CRAFTS_CHAT_TYPE,

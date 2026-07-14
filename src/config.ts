@@ -1,5 +1,8 @@
+import { normalizeTelegramBaseUrl } from "./telegram/urls";
+
 type AppConfig = {
   telegramBotToken: string;
+  telegramBaseUrl: string;
   defaultChatId?: string;
   adminChatId?: string;
   cronTimezone: string;
@@ -27,6 +30,7 @@ function parseBoolean(value: string | undefined, defaultValue: boolean): boolean
 export function getConfig(): AppConfig {
   return {
     telegramBotToken: getRequiredEnv("TELEGRAM_BOT_TOKEN"),
+    telegramBaseUrl: normalizeTelegramBaseUrl(process.env.TELEGRAM_BASE_URL),
     defaultChatId: process.env.TELEGRAM_CHAT_ID,
     adminChatId: process.env.TELEGRAM_ADMIN_CHAT_ID,
     cronTimezone: process.env.CRON_TIMEZONE ?? "UTC",

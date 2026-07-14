@@ -57,6 +57,7 @@ describe("createCronRunner", () => {
       timezone: "UTC",
       onEvents,
       context: {
+        telegramBaseUrl: "https://t.me",
         state: {} as any,
         activeChats: {} as any,
         feedSeen: {} as any,
@@ -84,6 +85,7 @@ describe("createCronRunner", () => {
       timezone: "Europe/Moscow",
       onEvents,
       context: {
+        telegramBaseUrl: "https://t.me",
         state: {} as any,
         activeChats: {} as any,
         feedSeen: {} as any,
@@ -115,6 +117,7 @@ describe("createCronRunner", () => {
         return;
       }),
       context: {
+        telegramBaseUrl: "https://t.me",
         state: {} as any,
         activeChats: {} as any,
         feedSeen: {} as any,
@@ -148,6 +151,7 @@ describe("createCronRunner", () => {
         return;
       }),
       context: {
+        telegramBaseUrl: "https://t.me",
         state: {} as any,
         activeChats: {} as any,
         feedSeen: {} as any,

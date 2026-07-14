@@ -67,6 +67,7 @@ function createContext(options: {
 
   return {
     logger,
+    telegramBaseUrl: "https://t.me",
     state,
     activeChats,
     feedSeen,

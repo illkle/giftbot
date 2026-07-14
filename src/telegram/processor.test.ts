@@ -47,6 +47,7 @@ function createFakeBot(): FakeBot {
 function buildConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
     telegramBotToken: "token",
+    telegramBaseUrl: "https://t.me",
     cronTimezone: "UTC",
     runJobsOnStartup: true,
     databasePath: "./data/test.sqlite",
